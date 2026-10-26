@@ -1,0 +1,43 @@
+# Local environment; keep only the safe template
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys
+.aws/
+credentials/
+secrets/
+credentials*.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+
+# Frontend dependencies and output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local editor, OS and log files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
