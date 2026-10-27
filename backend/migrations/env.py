@@ -1,6 +1,7 @@
 from alembic import context
 from app.infrastructure.config import get_settings
 from app.infrastructure.database import Base, create_session_factory
+from app.infrastructure import document_models  # Register tables with Alembic metadata.
 
 config = context.config
 target_metadata = Base.metadata

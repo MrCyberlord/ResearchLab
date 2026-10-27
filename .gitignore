@@ -41,3 +41,6 @@ coverage/
 .DS_Store
 Thumbs.db
 *.log
+
+# Local embedding weights and generated browser fixtures
+.cache/

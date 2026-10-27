@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router
+from app.api.documents import router as document_router
+from app.api.upload_limits import UploadBodyLimit
 from app.infrastructure.config import Settings, get_settings
 from app.infrastructure.database import create_session_factory
 from app.infrastructure.logging import configure_logging
@@ -32,8 +34,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="ResearchLab API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.add_middleware(UploadBodyLimit, max_bytes=settings.max_upload_bytes + 64 * 1024)
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
-                       allow_credentials=False, allow_methods=["GET"], allow_headers=["Content-Type"])
+                       allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
     @app.middleware("http")
     async def log_request(request: Request, call_next):
@@ -49,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(router)
+    app.include_router(document_router)
     return app
 
 
