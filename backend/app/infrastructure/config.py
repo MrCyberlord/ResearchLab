@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=16, ge=1, le=128)
     embedding_cpu_threads: int = Field(default=2, ge=1, le=32)
     embedding_dimension: Literal[384] = 384
+    retrieval_top_k: int = Field(default=5, ge=1, le=20)
+    retrieval_min_similarity: float = Field(default=0.25, ge=-1, le=1)
+    rag_max_context_bytes: int = Field(default=4000, ge=128, le=50000)
+    rag_max_prompt_bytes: int = Field(default=6000, ge=2048, le=64000)
+    llm_provider: Literal["ollama"] = "ollama"
+    llm_base_url: str = "http://127.0.0.1:11434"
+    llm_model: str = Field(default="gemma3:4b", min_length=1, max_length=120)
+    llm_timeout_seconds: float = Field(default=120, ge=1, le=600)
+    llm_context_tokens: int = Field(default=8192, ge=2048, le=65536)
+    llm_max_output_tokens: int = Field(default=512, ge=64, le=4096)
+    llm_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
 
     @model_validator(mode="after")
     def validate_chunk_config(self):
@@ -44,7 +55,28 @@ class Settings(BaseSettings):
             import re
             if not re.fullmatch(r"[0-9a-f]{40}", self.embedding_revision):
                 raise ValueError("EMBEDDING_REVISION must be an immutable 40-character model commit")
+        if self.rag_max_context_bytes > self.rag_max_prompt_bytes:
+            raise ValueError("RAG_MAX_CONTEXT_BYTES must not exceed RAG_MAX_PROMPT_BYTES")
+        if self.rag_max_prompt_bytes + self.llm_max_output_tokens + 1024 > self.llm_context_tokens:
+            raise ValueError("Prompt bytes, output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
         return self
+
+    @field_validator("llm_base_url")
+    @classmethod
+    def validate_llm_base_url(cls, value):
+        from urllib.parse import urlsplit
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("LLM_BASE_URL must be HTTP(S), without credentials, query or fragment")
+        parsed.port  # Reject invalid port values.
+        return value.rstrip("/")
+
+    @field_validator("llm_model")
+    @classmethod
+    def validate_llm_model(cls, value):
+        if not value.strip() or any(ord(char) < 32 for char in value):
+            raise ValueError("LLM_MODEL must be a nonempty model name without control characters")
+        return value.strip()
 
     @field_validator("embedding_cache_dir", mode="before")
     @classmethod

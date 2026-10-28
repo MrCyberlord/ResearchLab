@@ -8,7 +8,8 @@ class JsonFormatter(logging.Formatter):
         payload = {"timestamp": datetime.now(timezone.utc).isoformat(),
                    "level": record.levelname, "logger": record.name,
                    "event": record.getMessage()}
-        for key in ("method", "status_code", "duration_ms"):
+        for key in ("method", "status_code", "duration_ms", "retrieval_ms", "generation_ms",
+                    "retrieved_chunk_count", "context_chunk_count", "prompt_tokens", "completion_tokens", "outcome"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         if record.exc_info:

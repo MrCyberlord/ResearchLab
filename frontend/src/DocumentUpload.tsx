@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 type UploadedDocument = {
@@ -21,25 +21,33 @@ function isDocument(value: unknown): value is UploadedDocument {
     && typeof data.embedding_revision === 'string' && typeof data.embedding_profile === 'string';
 }
 
-export function DocumentUpload() {
+export function DocumentUpload({ onUploaded }: { onUploaded?: () => void }) {
   const input = useRef<HTMLInputElement>(null);
+  const mounted = useRef(true);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; request.current?.abort(); };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<UploadedDocument | null>(null);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (request.current) return;
     const file = input.current?.files?.[0];
     setError(''); setResult(null);
     if (!file) { setError('Select a PDF first.'); return; }
     if (!file.name.toLowerCase().endsWith('.pdf') || (file.type && file.type !== 'application/pdf')) {
       setError('Please select a PDF file.'); return;
     }
+    const controller = new AbortController(); request.current = controller;
     setBusy(true);
     try {
       const body = new FormData();
       body.append('file', file);
-      const response = await fetch('/api/documents', { method: 'POST', body });
+      const response = await fetch('/api/documents', { method: 'POST', body, signal: controller.signal });
       const data: unknown = await response.json();
       if (!response.ok) {
         let message = `Upload failed (HTTP ${response.status}).`;
@@ -51,11 +59,16 @@ export function DocumentUpload() {
         throw new Error(message);
       }
       if (!isDocument(data)) throw new Error('The server returned an unexpected response.');
-      setResult(data);
-      if (input.current) input.current.value = '';
+      if (mounted.current && !controller.signal.aborted) {
+        setResult(data);
+        if (input.current) input.current.value = '';
+        onUploaded?.();
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Upload failed. Please try again.');
-    } finally { setBusy(false); }
+      if (mounted.current && !controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Upload failed. Please try again.');
+    } finally {
+      if (request.current === controller) { request.current = null; if (mounted.current) setBusy(false); }
+    }
   }
 
   return <section className="upload-panel" aria-labelledby="upload-title" aria-busy={busy}>
@@ -66,7 +79,7 @@ export function DocumentUpload() {
       <input ref={input} id="pdf-file" type="file" accept=".pdf,application/pdf" disabled={busy} onChange={() => { setError(''); setResult(null); }} />
       <button type="submit" disabled={busy}>{busy ? 'Extracting and storing...' : 'Upload PDF'}</button>
     </form>
-    <div role="status" aria-live="polite">{busy && <p>Processing your PDF. This may take a moment.</p>}{result && <div className="upload-success"><strong>{result.filename} was stored.</strong><p>{result.page_count} pages / {result.chunk_count} chunks / {result.embedding_dimension} dimensions</p><p>Document ID: <code>{result.id}</code></p><p>Model: {result.embedding_model} @ {result.embedding_revision.slice(0, 12)}. Retrieval and question answering are not implemented.</p></div>}</div>
+    <div role="status" aria-live="polite">{busy && <p>Processing your PDF. This may take a moment.</p>}{result && <div className="upload-success"><strong>{result.filename} was stored.</strong><p>{result.page_count} pages / {result.chunk_count} chunks / {result.embedding_dimension} dimensions</p><p>Document ID: <code>{result.id}</code></p><p>Model: {result.embedding_model} @ {result.embedding_revision.slice(0, 12)}. The document library below will refresh for questions.</p></div>}</div>
     {error && <p className="upload-error" role="alert">{error}</p>}
   </section>;
 }

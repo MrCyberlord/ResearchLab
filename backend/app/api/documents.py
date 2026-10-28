@@ -2,11 +2,11 @@ from typing import Annotated
 from uuid import UUID
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, Query
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.dependencies import get_ingestion_service
+from app.api.dependencies import get_ingestion_service, get_retrieval_repository
 from app.application.ingestion import IngestionService
 from app.domain.documents import DuplicateDocument, EmbeddingFailure, InvalidPDF, PDFLimitExceeded, IncompatibleEmbeddings
 
@@ -58,3 +58,24 @@ def upload_document(request: Request, file: Annotated[UploadFile, File()],
         raise error(503, "storage_unavailable", "Document could not be saved. Retry later.") from exc
     finally:
         file.file.close()
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("", response_model=DocumentListResponse)
+def list_documents(limit: int = Query(default=100, ge=1, le=100),
+                   offset: int = Query(default=0, ge=0, le=1000000),
+                   repository=Depends(get_retrieval_repository)):
+    from app.domain.rag import RetrievalUnavailable
+    try:
+        documents, total = repository.list_documents(limit, offset)
+        return {"documents": [DocumentResponse(**{field: getattr(document, field)
+                               for field in DocumentResponse.model_fields}) for document in documents],
+                "total": total, "limit": limit, "offset": offset}
+    except RetrievalUnavailable as exc:
+        raise error(503, "storage_unavailable", "The document store is unavailable. Retry later.") from exc

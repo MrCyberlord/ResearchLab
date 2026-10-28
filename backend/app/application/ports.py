@@ -5,10 +5,14 @@ from app.domain.documents import Chunk, Document, PageText
 from uuid import UUID
 
 from app.domain.models import RunSummary
+from app.domain.rag import LLMResult, RetrievedChunk
 
 
 class LLMProvider(Protocol):
-    async def generate(self, prompt: str) -> str: ...
+    provider: str
+    model: str
+
+    def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str]) -> LLMResult: ...
 
 
 class EmbeddingProvider(Protocol):
@@ -37,3 +41,10 @@ class DocumentRepository(Protocol):
     def bind_profile(self, profile: str) -> None: ...
     def find_by_hash(self, content_hash: str) -> Document | None: ...
     def add(self, document: Document, chunks: list[Chunk], embeddings: list[list[float]]) -> None: ...
+
+
+class RetrievalRepository(Protocol):
+    def check_profile(self, profile: str) -> None: ...
+    def search(self, vector: list[float], profile: str, top_k: int, min_similarity: float,
+               document_ids: list[UUID] | None) -> list[RetrievedChunk]: ...
+    def list_documents(self, limit: int, offset: int) -> tuple[list[Document], int]: ...

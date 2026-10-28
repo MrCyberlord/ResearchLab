@@ -1,10 +1,10 @@
 # ResearchLab
 
-A portfolio AI engineering workspace with independent RAG and Agentic execution modes. **Milestone 2A: PDF ingestion and vector storage.** Retrieval, question answering, agents and Compare results remain unimplemented. No paid services are called.
+A portfolio AI engineering workspace for RAG and future Agentic execution. **Milestone 2B: semantic retrieval and grounded question answering.** PDF upload, local MiniLM embeddings, document-filtered retrieval and cited answers are available. Agentic workflows and Compare results remain unimplemented. The default local workflow makes no paid API calls.
 
 ## Requirements
 
-Python 3.12+, Node.js 22.12+ with npm, and Docker Compose v2. Python 3.14 and Node 24 are available in the implementation environment. The local PostgreSQL connection uses port 5433; Docker CLI availability depends on your host.
+Python 3.12+, Node.js 22.12+ with npm, Docker Compose v2, and Ollama for local answer generation. Python 3.14 and Node 24 are available in the implementation environment. The local PostgreSQL connection uses port 5433; Docker CLI availability depends on your host.
 
 ## Local development
 
@@ -60,30 +60,30 @@ Expect a `vector` row and revision `0003_embedding_profiles`. For offline migrat
 backend/
   app/
     api/              HTTP routes and request-scoped session dependency
-    application/      Ingestion service, chunking and adapter/repository protocols
-    domain/           Framework-independent document, page, chunk and run types
-    infrastructure/   PDF worker, local embeddings, repositories, models, settings/logging
+    application/      Ingestion, retrieval and RAG services; adapter/repository protocols
+    domain/           Framework-independent document, retrieval, answer and citation types
+    infrastructure/   PDF worker, MiniLM, Ollama, PostgreSQL repositories and settings/logging
     main.py           Application factory and dependency composition
   migrations/         Alembic environment and versioned migration
-  tests/              Health, CORS, logging and configuration
+  tests/              Unit/API, PostgreSQL, semantic and opt-in real-provider tests
 frontend/
-  src/                React shell, mode navigation and real API health status
+  src/                Upload, document selection, RAG questions, citations and API status
 compose.yaml          PostgreSQL 17 + pgvector with persistent volume
 ```
 
 This pragmatic modular monolith keeps operations simple and defines seams for independent future RAG and Agentic tests. The domain has no framework dependencies. FastAPI dependencies supply request-scoped SQLAlchemy sessions; future application services own transaction commits. Lifespan creates the engine/session factory and disposes the engine at shutdown. Connections are lazy. Settings can be injected directly for tests.
 
-Provider and repository protocols establish adapter contracts. The ingestion use case has a local embedding adapter and document repository; LLM adapters and execution services remain deferred. Compare is a presentation mode, not a third execution engine. No LangGraph, generic CRUD abstraction, service locator or microservices are introduced.
+Provider and repository protocols establish adapter contracts. Ingestion and retrieval share the configured embedding adapter/profile. RAG uses a provider-agnostic LLM contract with a real Ollama adapter; Agentic execution remains deferred. Compare is a presentation mode, not a third execution engine. No LangGraph, generic CRUD abstraction, service locator or microservices are introduced.
 
 `GET /api/health` returns `{"status":"ok","service":"researchlab-api"}`. It is API liveness only, not database/provider readiness. The shell displays a real health request outcome, never simulated AI results. Hash-based navigation supports reloads and browser history without a routing dependency.
 
-Application logs are JSON with timestamps, levels, events, request status and duration. They omit prompts, bodies, URLs and credentials. `--no-access-log` disables Uvicorn's separate text access log. CORS allows explicit configured origins and GET/POST for health and uploads.
+Application logs are JSON with timestamps, levels, events, request status and duration. They omit prompts, bodies, URLs and credentials. `--no-access-log` disables Uvicorn's separate text access log. CORS allows explicit configured origins and GET/POST for health, document upload/listing, retrieval and questions.
 
 Alembic enables pgvector explicitly; startup never mutates schemas. The migration role needs extension creation privileges. Downgrade deliberately retains the extension to preserve potentially shared vector data while rewinding the Alembic revision. PostgreSQL binds to loopback and persists in a named volume. `docker compose down` preserves data; adding `-v` deletes it. The Docker image is version tagged. Frontend dependencies use the committed npm lockfile; Python dependencies use bounded compatible ranges.
 
 ## Scope boundary
 
-Authentication, retrieval, question answering, ANN indexes, agent tools, evaluation, LangGraph and deployment are future work. Production hosting will need API routing and operational configuration. Review Milestone 2A before retrieval work begins.
+Authentication, hybrid search, reranking, ANN indexes, agent tools, evaluation dashboards, LangGraph and deployment remain outside this milestone. Production hosting needs API routing and operational configuration. Review Milestone 2B before expanding scope.
 
 ## Milestone 1 verification (2026-10-21)
 
@@ -97,7 +97,7 @@ Framework references: [FastAPI Settings](https://fastapi.tiangolo.com/advanced/s
 
 ## PDF ingestion (Milestone 2A)
 
-Use the RAG screen's PDF form or POST multipart field `file` to `/api/documents`. A successful request returns HTTP 201 with `id`, sanitized `filename`, `page_count`, `chunk_count`, `embedding_model`, `embedding_revision`, `embedding_profile` and `embedding_dimension`. The form displays real loading, success and error states. It does not ask questions or display AI answers.
+Use the RAG screen's PDF form or POST multipart field `file` to `/api/documents`. A successful request returns HTTP 201 with `id`, sanitized `filename`, `page_count`, `chunk_count`, `embedding_model`, `embedding_revision`, `embedding_profile` and `embedding_dimension`. The upload form displays real loading, success and error states. Successful uploads refresh the document selection in the RAG question panel below it.
 
 ```powershell
 curl.exe -F "file=@C:/path/to/document.pdf;type=application/pdf" http://127.0.0.1:8000/api/documents
@@ -109,7 +109,7 @@ Text extraction uses pypdf in a separate process. The parent monitors a 15-secon
 
 Chunks use character windows (default 1,000 characters, 150-character overlap) independently within each page. They never cross pages. Page numbers are one-based; `chunk_order` is zero-based across the entire document. Whitespace is trimmed at page boundaries, NUL characters are removed, and blank chunks are omitted. Each chunk stores the document UUID, page number, order, text and a 384-dimensional pgvector vector. Documents retain the file hash, counts, model identity and chunking parameters for reproducibility.
 
-The provider interface remains synchronous and provider-agnostic. Ingestion uses `embed_documents`; future query code must use `embed_query` on the same provider and verify its `profile` against the corpus before comparing vectors. Both paths delegate to one shared encoder: NFKC Unicode normalization, NUL removal, whitespace collapse, pinned MiniLM tokenizer/mean pooling, 256-wordpiece limit, float32 output and L2 normalization. No query/document-specific prompts are added. Chunk text is retained as extracted; this normalization is applied only for embedding.
+The provider interface remains synchronous and provider-agnostic. Ingestion uses `embed_documents`; retrieval uses `embed_query` on the same configured provider and verifies its `profile` against the corpus before comparing vectors. Both paths delegate to one shared encoder: NFKC Unicode normalization, NUL removal, whitespace collapse, pinned MiniLM tokenizer/mean pooling, 256-wordpiece limit, float32 output and L2 normalization. No query/document-specific prompts are added. Chunk text is retained as extracted; this normalization is applied only for embedding.
 
 The default provider is `sentence_transformers`, model `sentence-transformers/all-MiniLM-L6-v2`, revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, with 384 dimensions. It uses CPU inference and safetensors, never remote custom model code. The revision is an immutable Hugging Face commit, not a moving branch. Configuration selects the adapter/model, cache, batch size, CPU threads and offline behavior; unsupported provider/model pairs fail validation. The legacy `local` / `local-hash-v1` adapter remains available explicitly for lexical corpora and tests, with no silent fallback from semantic inference.
 
@@ -174,7 +174,7 @@ Parser reference: [pypdf text extraction and memory considerations](https://pypd
 - A Windows ownership problem in old pytest temporary/cache directories required `-p no:cacheprovider --basetemp=.venv/pytest-m2a-20261027-a`. For a fresh run, choose a new temporary directory under the ignored `.venv`; pytest may remove an existing basetemp directory, so never point it at source or valuable data. No application workaround was added for these host permissions.
 - One upstream Starlette/httpx TestClient deprecation warning remains. Local embeddings are lexical development vectors; OCR and semantic embedding models are not included.
 
-No deployment, commits, pushes, retrieval, question answering or agent workflows were added.
+The earlier Milestone 2A verification did not include retrieval or question answering; those are added in Milestone 2B below.
 
 ### Semantic tests and browser verification
 
@@ -189,17 +189,9 @@ Remove-Item Env:RUN_DB_TESTS, Env:RUN_SEMANTIC_TESTS
 .\.venv\Scripts\alembic.exe -c backend/alembic.ini check
 ```
 
-Browser testing could not be performed: both available browser/computer-use entry points failed to initialize with `windows sandbox failed: helper_unknown_error: setup refresh had errors`. This is separate from API integration tests. Exact manual verification:
+The earlier browser automation runtime was unavailable. The reviewer subsequently confirmed the Milestone 2A PDF upload and duplicate-upload checks before that commit. Those checks do not verify the new question flow; follow the Milestone 2B manual steps below.
 
-1. Apply `alembic upgrade head`, configure MiniLM as above, preload it, and start FastAPI and Vite using the local setup commands. If the database contains lexical data, run the explicit re-embedding command first or expect the safe 409 compatibility error.
-2. Open http://localhost:5173/#rag. Confirm API online. Select a small, unencrypted PDF with selectable text and at least two pages. Click **Upload PDF**.
-3. Confirm the button/file input are disabled and a processing message appears. In the browser Network panel, verify a multipart `POST /api/documents` request. On success, expect HTTP 201 and the success panel with the filename, document UUID, page/chunk counts, 384 dimensions and MiniLM model/revision. Retrieval/QA should still be marked unimplemented.
-4. Inspect the response JSON: `embedding_model` must equal `sentence-transformers/all-MiniLM-L6-v2`, revision must match configuration, and `embedding_profile` must be 64 hex characters. Inspect documents/chunks in your database: model metadata, one-based page numbers, global zero-based chunk order, and `vector_dims(embedding)=384` should agree. A real browser upload persists this test document; it is not automatically removed.
-5. Upload the exact same PDF again (or rename it without changing bytes): expect HTTP 409 `duplicate_document` and an error message; no extra document/chunks should appear.
-6. Select a non-PDF: expect client-side rejection. Upload malformed `.pdf` bytes with PDF MIME type or a blank/scanned PDF: expect a meaningful 422 response. Upload beyond `MAX_UPLOAD_BYTES`: expect 413. The UI should recover and permit selecting another file, without displaying fabricated results.
-7. Stop the API and attempt a new upload: expect a network error state, then restart the API. Verify Agentic/Compare navigation remains available and unfinished.
-
-### Final-improvements verification and dependency recovery (2026-10-27)
+### Historical Milestone 2A verification and dependency recovery (2026-10-27)
 
 The semantic runtime is installed in the existing `.venv` using the original selected versions: Sentence Transformers 5.1.2, Transformers 4.57.6, tokenizers 0.22.2, NumPy 2.5.4, SciPy 1.18.1 and scikit-learn 1.9.1. Required regex, joblib, threadpoolctl, narwhals and cloudpickle dependencies are installed too. `pip check` reports no broken requirements. Previously installed package versions were preserved.
 
@@ -207,4 +199,99 @@ After recovery, the five previously failing tests passed, followed by all 61 bac
 
 The final review additionally isolates PostgreSQL tests from any manual-upload data using private transaction-scoped schemas. Final review passes all 62 backend tests with PostgreSQL and semantic tests enabled, including the public-corpus isolation regression. Frontend typecheck/build and `pip check` pass; `alembic check` reports no schema drift at revision `0003_embedding_profiles`. Git review found no credential values or unintended generated artifacts in the candidate files; `.env`, virtual environments, model downloads, caches and local reports remain ignored. The existing upstream Starlette/httpx TestClient deprecation warning remains. No browser check is claimed from automated tests: the manual PDF and duplicate-upload checks must be confirmed by the reviewer before commit/push.
 
-No retrieval APIs, question answering, LangGraph or deployment were added.
+Milestone 2A did not add retrieval, question answering, LangGraph or deployment. The following section describes the current Milestone 2B behavior.
+
+## Semantic retrieval and grounded QA (Milestone 2B)
+
+### Provider setup
+
+The development default uses the native Ollama `/api/chat` API at `http://127.0.0.1:11434` with `gemma3:4b`. Ollama and this model were already available in the implementation environment, so no new model download or API key was needed. Start Ollama if its desktop app/service is not already serving, then verify the model:
+
+```powershell
+ollama serve
+# In another terminal:
+ollama list
+```
+
+If `gemma3:4b` is absent, explicitly download it with `ollama pull gemma3:4b` before asking questions. This can consume several GB of disk space, network bandwidth and setup time; the application never pulls a model automatically. Select another installed model through `LLM_MODEL` if desired and rerun the smoke/manual checks. A smaller model may be faster and less reliable at following the evidence format. Unsupported provider names fail settings validation; adding another provider requires an adapter/factory entry behind the existing LLM interface, not changes to RAG orchestration.
+
+The new defaults in `.env.example` configure top-k, similarity threshold, context/prompt budgets, provider/model, timeout and response limits. Existing MiniLM weights are reused; retrieval must match the ingestion model revision, preprocessing and 384-dimensional profile. If the corpus contains lexical or otherwise incompatible vectors, use the existing explicit re-embedding workflow rather than resetting the database.
+
+Local Ollama inference has no hosted API bill, but uses CPU/GPU, RAM, electricity and time. The 4B generator has a substantially larger memory footprint than MiniLM; model loading, hardware and prompt length affect latency. There is no automatic remote fallback. If you change `LLM_BASE_URL` to a remote Ollama-compatible service, question text and selected context are sent there, and that service's privacy, access and cost policies apply. The current adapter does not implement API-key authentication or hosted OpenAI/Anthropic adapters. Never place credentials in a URL or commit them.
+
+### API and retrieval behavior
+
+| Endpoint | Request / result |
+| --- | --- |
+| `GET /api/documents?limit=100&offset=0` | Paginated metadata: `documents`, `total`, `limit`, `offset`. Limit is 1-100; the UI supports loading more. |
+| `GET /api/rag/config` | Effective default/max top-k, similarity threshold, LLM provider/model and maximum question characters. This is configuration, not provider readiness. |
+| `POST /api/retrieval` | JSON `{ "query": "your question", "top_k": 5, "document_ids": ["<UUID>"] }`; returns matching chunks with document/filename/page/order, text, cosine distance/similarity, embedding profile and retrieval latency. |
+| `POST /api/rag/questions` | JSON `{ "question": "your question", "top_k": 5, "document_ids": ["<UUID>"] }`; returns an answer or explicit insufficient-evidence status, citations, counts, latencies and supported token usage. |
+
+Both POST bodies accept omitted/null `top_k` to use `RETRIEVAL_TOP_K` (default 5), or an integer from 1-20. Omitted/null `document_ids` searches all documents; `[]` selects none and never broadens to all. At most 100 UUIDs are accepted. Unknown IDs return no matches for those IDs. Questions must be nonempty, at most 2,000 characters and 4,000 UTF-8 bytes, without unsupported control characters. JSON request bodies are capped at 32 KiB. The local development app has no authentication/tenant authorization; document filtering is an evidence scope, not an access-control boundary.
+
+Queries use the same MiniLM encoding path and model profile as ingestion. PostgreSQL computes exact cosine distance with pgvector `<=>`; smaller distance ranks first, with deterministic tie-breaking. `RETRIEVAL_MIN_SIMILARITY` defaults to 0.25 and filters weak matches before top-k. It is a configurable retrieval cutoff, not a calibrated confidence score. Document filters and the expected profile are applied in the SQL query. The repository checks the corpus profile before embedding and rechecks it under a shared row lock in the search transaction, so a concurrent corpus conversion cannot mix vector spaces. The read transaction finishes before generation.
+
+There is no new schema migration for Milestone 2B: the existing `vector(384)` storage supports the query. Alembic remains at `0003_embedding_profiles`. Exact scans are pragmatic for the current local corpus; they scan/rank eligible vectors and will become slower as the library grows. ANN indexes, hybrid search and reranking are intentionally deferred.
+
+### Grounding and bounded generation
+
+RAG validates the question, embeds it, retrieves eligible chunks and assembles a bounded source prompt. Defaults allow 4,000 UTF-8 bytes of source text and 6,000 bytes for the combined system/question/source prompt. Chunks may be truncated at UTF-8 boundaries to fit. Ollama receives an 8,192-token context setting and a 512-token output cap; settings reserve a further 1,024-token margin and reject incompatible byte/token budget combinations. Byte bounds are conservative controls, not exact model-tokenizer counts.
+
+The model receives source labels and text as untrusted data, with instructions to ignore embedded commands, use no outside knowledge, and acknowledge insufficient context. Structured generation must return an answer, source references with supporting quotes and an `insufficient_evidence` flag. The service validates source labels against only the chunks actually sent and verifies each quote by NFKC/whitespace-normalized substring matching against its supplied source excerpt. Quote formatting does not need byte-for-byte equality; factual entailment is not mechanically verified. Document UUID, filename, page number, chunk ID/order and supporting text come from database records, never from model-invented metadata. `[S1]` labels are local to that response; the UI links them to the displayed source details.
+
+An answered response has `status="answered"`, nonempty `answer` and citations containing `source_id`, `chunk_id`, `document_id`, `filename`, `page_number`, `chunk_order`, `quote` and the bounded supporting `text`. When retrieval is empty, generation is skipped. Empty retrieval or a model-declared inability returns `status="insufficient_evidence"`, `answer=null`, an explanatory `message` and no citations. A provider response that claims an answer without supporting citations is rejected with 502. Unsupported labels, unverifiable quotes or malformed/truncated provider output are rejected rather than replaced with a fabricated answer.
+
+These checks establish source identity and quote presence; they do not prove that every generated claim logically follows from its quote or make the model immune to prompt injection. Review source passages before relying on an answer. There is no reranker, entailment verifier or evaluation dashboard in this milestone.
+
+Validation failures return 422, oversized requests 413 and incompatible profiles 409. Embedding/storage/provider unavailability returns 503; provider timeout returns 504; invalid, oversized, compressed, truncated or unsupported provider responses return 502. The Ollama adapter uses `LLM_TIMEOUT_SECONDS` (default 120), a five-second-or-smaller connect timeout, and `LLM_MAX_RESPONSE_BYTES` (default 65,536). It disables environment proxies and redirects. It does not retry generation or silently switch models/providers.
+
+Responses and JSON logs expose retrieval/generation latency, retrieved/context chunk counts and prompt/completion token usage when Ollama supplies it. Missing usage remains null. Logs contain event names, timings, counts and outcomes; they do not log questions, document text, quotes, filenames, API keys or provider response bodies. Answers are returned to the caller without storing a conversation history.
+
+### Tests and real-provider smoke check
+
+Ordinary unit/API and PostgreSQL RAG tests mock LLM calls. PostgreSQL tests retain the private-schema/rollback isolation described above, and semantic tests use the existing MiniLM cache. Run the full automated groups from the root:
+
+```powershell
+$env:RUN_DB_TESTS='1'
+$env:RUN_SEMANTIC_TESTS='1'
+$env:EMBEDDING_LOCAL_FILES_ONLY='true'
+$env:HF_HUB_OFFLINE='1'
+$env:TRANSFORMERS_OFFLINE='1'
+.\.venv\Scripts\python.exe -m pytest backend/tests -q -p no:cacheprovider --basetemp=.venv/pytest-choose-a-new-unused-name
+.\.venv\Scripts\alembic.exe -c backend/alembic.ini current
+.\.venv\Scripts\alembic.exe -c backend/alembic.ini check
+```
+
+The real-provider test is separate and opt-in. It sends a small synthetic evidence prompt to the configured provider, so it requires Ollama/model availability and consumes real generation resources:
+
+```powershell
+$env:RUN_LLM_SMOKE='1'
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_llm_smoke.py -q -p no:cacheprovider
+Remove-Item Env:RUN_LLM_SMOKE
+```
+
+A real `gemma3:4b` adapter smoke check passed in the implementation environment: 28.895 seconds, 134 prompt tokens and 53 completion tokens. This is one setup check, not a throughput benchmark or browser verification. No paid service was used.
+
+### Manual end-to-end verification
+
+The reviewer confirmed that all three Milestone 2B manual browser checks passed on 2026-10-28. This confirmation is separate from automated API/model/database tests; browser automation was not used. With migrations current, MiniLM cached, Ollama running and FastAPI/Vite started using the setup commands above:
+
+1. Open http://localhost:5173/#rag. Upload a small, unencrypted PDF with selectable text containing a known test fact, such as "The fictional support desk closes at 17:00 UTC." Confirm upload succeeds and the document library refreshes.
+2. Select only that PDF, ask "When does the support desk close?" and choose a small top-k. Confirm a real loading state, then an answer supported by the known fact. Open its `[S1]` source link and verify filename, page, document/chunk IDs and quote against the PDF. Inspect the Network response for actual timings/counts/token usage.
+3. Upload an unrelated PDF and select only it. Repeat the support-desk question. Verify retrieval cannot cite the excluded support PDF; expect insufficient evidence when the selected passages do not support the answer. Clear selection and verify the UI requests a selection rather than silently searching all documents. The API's explicit `document_ids: []` must also return no evidence.
+4. Ask a question absent from all uploaded documents. Confirm the response acknowledges missing evidence and does not invent citations. Inspect `POST /api/retrieval` through http://127.0.0.1:8000/docs to check chunk ranking, filters and top-k independently of generation.
+5. Upload the exact same PDF again, including after renaming it without changing bytes. Confirm the existing duplicate error and unchanged document count. Agentic and Compare screens must remain marked unfinished.
+6. With Ollama unavailable or `LLM_MODEL` set to a nonexistent local model, submit a supported question and confirm a meaningful provider error, without a fabricated fallback answer. Restore the service/model afterward.
+7. To check compatibility, point configuration at a different embedding profile without rewriting stored vectors and confirm a 409 mismatch for a nonempty search scope. Restore the original MiniLM configuration. Do not reset volumes, relabel old vectors or run conversion merely to bypass the guard.
+
+LangGraph, hybrid search, reranking, evaluation dashboards and deployment remain outside this milestone.
+
+### Milestone 2B verification (2026-10-28)
+
+- All **170 backend tests passed** with `RUN_DB_TESTS=1`, `RUN_SEMANTIC_TESTS=1` and `RUN_LLM_SMOKE=1`, including PostgreSQL ranking/filter/profile/citation tests, genuine MiniLM inference, the real Ollama adapter and a full PDF-to-MiniLM-to-pgvector-to-RAG citation test. Ordinary LLM test cases remain mocked; real-provider tests require opt-in.
+- Frontend typecheck and production build passed.
+- `alembic upgrade head`, revision inspection and schema-drift checks passed at `0003_embedding_profiles`; no schema change was needed. `pip check` passed.
+- The existing upstream Starlette/httpx TestClient deprecation warning remains. The reviewer confirmed all three manual browser checks passed; automated browser execution is not claimed. The manual steps above remain available for future verification.
+
+No deployment, Milestone 2C, LangGraph, hybrid search, reranking or evaluation dashboard was added.
