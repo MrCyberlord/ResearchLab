@@ -294,4 +294,50 @@ LangGraph, hybrid search, reranking, evaluation dashboards and deployment remain
 - `alembic upgrade head`, revision inspection and schema-drift checks passed at `0003_embedding_profiles`; no schema change was needed. `pip check` passed.
 - The existing upstream Starlette/httpx TestClient deprecation warning remains. The reviewer confirmed all three manual browser checks passed; automated browser execution is not claimed. The manual steps above remain available for future verification.
 
-No deployment, Milestone 2C, LangGraph, hybrid search, reranking or evaluation dashboard was added.
+At the Milestone 2B checkpoint, no deployment, Milestone 2C work, LangGraph, hybrid search, reranking or evaluation dashboard had been added.
+
+## Reproducible RAG evaluation baseline (Milestone 2C-A)
+
+Milestone 2C-A adds an offline evaluator around the existing `RetrievalService` and optional `RagService`; it does not add an API endpoint or frontend dashboard. The versioned dataset is under `backend/evaluation/datasets/v1/`. Its four short documents, questions and annotations were written for this repository and dedicated under CC0 1.0. They describe fictional habitat operations, include paraphrased questions, one question with two relevant chunks, a document-filtered question and two unanswerable questions. Each relevance annotation is an exact tuple of dataset document key, one-based page and zero-based global chunk order. The dataset's chunk size and overlap are pinned, and loading fails if an expected reference is not produced.
+
+Evaluation data never enters the production corpus. Each run creates ORM tables and vectors in a randomly named PostgreSQL schema inside an outer transaction, searches that schema, then rolls the entire transaction back. The runner compares qualified public document/chunk counts before and after and fails if they changed. It does not reset a database, truncate tables or delete volumes. The existing MiniLM cache and pgvector extension are reused; retrieval-only evaluation makes no paid or network provider calls.
+
+From the repository root, run the deterministic retrieval ordering and metrics offline:
+
+```powershell
+$env:EMBEDDING_LOCAL_FILES_ONLY='true'
+$env:HF_HUB_OFFLINE='1'
+$env:TRANSFORMERS_OFFLINE='1'
+Set-Location backend
+..\.venv\Scripts\python.exe -m app.evaluation.cli `
+  --run-id local-minilm-check `
+  --k 1 3 5 `
+  --output ..\.cache\evaluations\latest.json `
+  --report ..\.cache\evaluations\latest.md `
+  --fail-on-regression
+Set-Location ..
+Remove-Item Env:EMBEDDING_LOCAL_FILES_ONLY, Env:HF_HUB_OFFLINE, Env:TRANSFORMERS_OFFLINE
+```
+
+An editable/package install also exposes `researchlab-eval`; `python -m app.evaluation.cli` works directly from `backend` without reinstalling. JSON is the machine-readable artifact and Markdown is the concise report. Both local outputs default to ignored `.cache` paths. Results use sorted K values, dataset order, stable document UUIDs and deterministic pgvector tie-breaking. Run timestamps and measured latencies naturally vary. The default checked-in comparator is `backend/evaluation/baselines/minilm-v1.json`; `--fail-on-regression` returns exit code 2 for any retrieval metric decrease or an incompatible dataset, embedding profile or retrieval configuration.
+
+Retrieval metrics are macro-averaged over the six answerable questions; the two unanswerable questions have no relevant-item denominator and are excluded from these four metrics:
+
+- Recall@K is relevant expected references found in the first K divided by all expected references for that question.
+- Precision@K is relevant expected references in the first K divided by K. If the similarity threshold returns fewer than K results, the missing positions count as nonrelevant.
+- MRR@K is the reciprocal rank of the first relevant reference within K, or zero.
+- Hit Rate@K is the fraction of answerable questions with at least one relevant reference within K.
+
+Use `--with-llm --answer-top-k 5` to opt into the configured real local Ollama provider. This adds citation precision (dataset-relevant citations / all citations), citation coverage (unique expected references cited / expected references), normalized quote-presence validity and answer/abstention behavior. Provider failures are reported as errors and excluded from completed-case denominators; they are never converted into answers or abstentions. Generation p50/p95 and token totals are recorded only when returned by the provider. LLM results are informational and may vary by model/runtime; retrieval metrics are the regression gate.
+
+These answer checks are deliberately mechanical. They establish whether a citation identifies an annotated source and whether its normalized quote occurs in the supplied chunk. They do not determine whether every claim is entailed by that quote, so the reports set `factual_entailment_measured=false` and do not claim faithfulness.
+
+### Baseline results and interpretation
+
+The checked-in MiniLM baseline produced Recall@1 0.750, Precision@1/MRR@1/Hit Rate@1 0.833, Recall@3 and Recall@5 1.000, and MRR@3/MRR@5 0.917. Retrieval latency on the reference Windows CPU run was p50 18.83 ms and p95 23.79 ms for eight queries; timing is hardware-dependent and is not a regression threshold.
+
+The opt-in `ollama/gemma3:4b` reference run completed all eight questions at K=5. Citation precision and citation coverage were 0.714286, mechanical quote validity was 1.0, abstention behavior accuracy was 0.75, unanswerable abstention was 1.0 and answerable response rate was 0.666667. Generation latency was p50 18.51 s and p95 44.97 s. Ollama supplied usage for all cases: 3,094 prompt tokens and 828 completion tokens. Two answerable questions were conservatively refused, and one multi-source answer cited two irrelevant retrieved chunks; this is visible rather than hidden by an aggregate-only score.
+
+This is a small baseline, not a statistically strong benchmark. Do not tune prompts, thresholds or questions against these eight examples and then present the same-set score as generalization. Preserve this version for comparisons; create a new dataset version for annotation changes, and keep a separate unseen holdout before optimizing. Do not upload these fixtures into a manual/production corpus during evaluation. The corpus is synthetic and cannot establish real-domain quality, prompt-injection resilience or factual entailment.
+
+Milestone 2C-A adds no migrations and no frontend changes. Hybrid search, reranking, LangGraph, evaluation dashboards and deployment remain out of scope.
