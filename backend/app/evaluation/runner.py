@@ -26,6 +26,7 @@ from app.infrastructure.database import Base, create_session_factory
 from app.infrastructure.document_repository import SQLAlchemyDocumentRepository
 from app.infrastructure.embeddings import create_embedding_provider
 from app.infrastructure.llm import create_llm_provider
+from app.infrastructure.reranker import create_reranker_provider
 from app.infrastructure.retrieval_repository import SQLAlchemyRetrievalRepository
 
 
@@ -87,6 +88,12 @@ class IsolatedEvaluationDatabase(AbstractContextManager):
                 SQLAlchemyRetrievalRepository(self.session), embeddings,
                 default_top_k=self.settings.retrieval_top_k,
                 min_similarity=self.dataset.retrieval_min_similarity,
+                default_strategy=self.settings.retrieval_strategy,
+                semantic_candidates=self.settings.semantic_candidate_count,
+                keyword_candidates=self.settings.keyword_candidate_count,
+                rrf_constant=self.settings.rrf_fusion_constant,
+                reranker=create_reranker_provider(self.settings),
+                reranker_candidates=self.settings.reranker_candidate_count,
             )
             rag = None
             if self.include_llm:
@@ -158,35 +165,41 @@ class EvaluationRunner:
         key = self.environment.document_keys.get(item.document_id)
         return EvaluationReference(key or "<unknown-document>", item.page_number, item.chunk_order)
 
-    def run(self, ks: list[int], answer_top_k: int) -> dict:
+    def run(self, ks: list[int], answer_top_k: int, strategies: list[str] | None = None,
+            answer_strategy: str = "semantic") -> dict:
         ks = sorted(set(ks))
         if not ks or any(isinstance(k, bool) or not 1 <= k <= 20 for k in ks):
             raise ValueError("Evaluation K values must be unique integers between 1 and 20.")
         if not 1 <= answer_top_k <= 20:
             raise ValueError("answer_top_k must be between 1 and 20.")
-        retrieval_cases, retrieval_latencies = [], []
-        for question in self.dataset.questions:
-            selected = None if question.document_filter is None else [
-                self.environment.document_ids[key] for key in question.document_filter
-            ]
-            result = self.environment.retrieval.retrieve(question.question, max(ks), selected)
-            retrieval_latencies.append(result.retrieval_ms)
-            retrieval_cases.append({
-                "question_id": question.id,
-                "relevant": list(question.relevant),
-                "retrieved": [self._reference(chunk) for chunk in result.chunks],
-                "details": [{"reference": self._reference(chunk).as_dict(),
-                             "distance": round(chunk.distance, 6), "similarity": round(chunk.similarity, 6)}
-                            for chunk in result.chunks],
-            })
-        answer_section = self._evaluate_answers(answer_top_k)
-        retrieval_case_output = [{
-            "question_id": case["question_id"],
-            "relevant": [item.as_dict() for item in case["relevant"]],
-            "retrieved": case["details"],
-        } for case in retrieval_cases]
+        strategies = ["semantic"] if strategies is None else list(dict.fromkeys(strategies))
+        allowed = {"semantic", "hybrid", "hybrid_rerank"}
+        if not strategies or any(strategy not in allowed for strategy in strategies):
+            raise ValueError("Evaluation strategies must be semantic, hybrid or hybrid_rerank.")
+        if answer_strategy not in allowed:
+            raise ValueError("answer_strategy must be semantic, hybrid or hybrid_rerank.")
+        strategy_results = {strategy: self._evaluate_retrieval(ks, strategy) for strategy in strategies}
+        primary_name = "semantic" if "semantic" in strategy_results else strategies[0]
+        primary = strategy_results[primary_name]
+        answer_section = self._evaluate_answers(answer_top_k, answer_strategy)
+        reranker = getattr(self.environment.retrieval, "reranker", None)
+        metric_definitions = {
+            "relevance": "exact match of dataset document key, one-based page and zero-based global chunk order",
+            "denominator": "macro average over answerable questions only; unanswerable questions have no relevant-item denominator",
+            "recall_at_k": "relevant references in first K / all expected relevant references",
+            "precision_at_k": "relevant references in first K / K; missing returned positions count as nonrelevant",
+            "mrr_at_k": "reciprocal rank of the first relevant reference within K, or zero",
+            "hit_rate_at_k": "fraction with at least one relevant reference within K",
+        }
+        retrieval_output = {
+            "primary_strategy": primary_name,
+            "configuration": primary["configuration"],
+            "metric_definitions": metric_definitions,
+            "metrics": primary["metrics"], "latency_ms": primary["latency_ms"],
+            "cases": primary["cases"], "strategy_results": strategy_results,
+        }
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "run": {
                 "run_id": self.run_id,
                 "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -210,30 +223,67 @@ class EvaluationRunner:
                 "profile": self.environment.retrieval.embeddings.profile,
                 "normalization": "L2 normalized",
             },
-            "retrieval": {
-                "configuration": {
-                    "distance": "pgvector exact cosine", "k_values": ks,
-                    "min_similarity": self.dataset.retrieval_min_similarity,
-                    "chunk_size": self.dataset.chunk_size, "chunk_overlap": self.dataset.chunk_overlap,
-                },
-                "metric_definitions": {
-                    "relevance": "exact match of dataset document key, one-based page and zero-based global chunk order",
-                    "denominator": "macro average over answerable questions only; unanswerable questions have no relevant-item denominator",
-                    "recall_at_k": "relevant references in first K / all expected relevant references",
-                    "precision_at_k": "relevant references in first K / K; missing returned positions count as nonrelevant",
-                    "mrr_at_k": "reciprocal rank of the first relevant reference within K, or zero",
-                    "hit_rate_at_k": "fraction with at least one relevant reference within K",
-                },
-                "metrics": retrieval_metrics(retrieval_cases, ks),
-                "latency_ms": {"sample_count": len(retrieval_latencies),
-                               "p50": percentile(retrieval_latencies, 50),
-                               "p95": percentile(retrieval_latencies, 95)},
-                "cases": retrieval_case_output,
+            "reranker": None if reranker is None else {
+                "provider": reranker.provider, "model": reranker.model, "revision": reranker.revision,
+                "lazy": True, "used": "hybrid_rerank" in strategies or answer_strategy == "hybrid_rerank",
             },
+            "retrieval": retrieval_output,
             "answer_evaluation": answer_section,
         }
 
-    def _evaluate_answers(self, top_k: int) -> dict:
+    def _evaluate_retrieval(self, ks: list[int], strategy: str) -> dict:
+        retrieval_cases, retrieval_latencies = [], []
+        for question in self.dataset.questions:
+            selected = None if question.document_filter is None else [
+                self.environment.document_ids[key] for key in question.document_filter
+            ]
+            result = self.environment.retrieval.retrieve(question.question, max(ks), selected, strategy)
+            retrieval_latencies.append(result.retrieval_ms)
+            retrieval_cases.append({
+                "question_id": question.id,
+                "relevant": list(question.relevant),
+                "retrieved": [self._reference(chunk) for chunk in result.chunks],
+                "details": [{"reference": self._reference(chunk).as_dict(),
+                             "distance": round(chunk.distance, 6), "similarity": round(chunk.similarity, 6)}
+                            for chunk in result.chunks],
+            })
+        retrieval_case_output = [{
+            "question_id": case["question_id"],
+            "relevant": [item.as_dict() for item in case["relevant"]],
+            "retrieved": case["details"],
+        } for case in retrieval_cases]
+        return {
+            "configuration": self._retrieval_configuration(strategy, ks),
+            "metrics": retrieval_metrics(retrieval_cases, ks),
+            "latency_ms": {"sample_count": len(retrieval_latencies),
+                           "p50": percentile(retrieval_latencies, 50),
+                           "p95": percentile(retrieval_latencies, 95)},
+            "cases": retrieval_case_output,
+        }
+
+    def _retrieval_configuration(self, strategy: str, ks: list[int]) -> dict:
+        base = {
+            "distance": "pgvector exact cosine", "k_values": ks,
+            "min_similarity": self.dataset.retrieval_min_similarity,
+            "chunk_size": self.dataset.chunk_size, "chunk_overlap": self.dataset.chunk_overlap,
+        }
+        if strategy != "semantic":
+            base.update({
+                "strategy": strategy,
+                "keyword_search": "PostgreSQL english websearch_to_tsquery + ts_rank_cd",
+                "semantic_candidate_count": self.environment.retrieval.semantic_candidates,
+                "keyword_candidate_count": self.environment.retrieval.keyword_candidates,
+                "rrf_fusion_constant": self.environment.retrieval.rrf_constant,
+            })
+        if strategy == "hybrid_rerank":
+            base.update({
+                "reranker_candidate_count": self.environment.retrieval.reranker_candidates,
+                "reranker_model": self.environment.retrieval.reranker.model,
+                "reranker_revision": self.environment.retrieval.reranker.revision,
+            })
+        return base
+
+    def _evaluate_answers(self, top_k: int, strategy: str) -> dict:
         if self.environment.rag is None:
             return {
                 "status": "disabled", "llm_dependent": True,
@@ -246,7 +296,7 @@ class EvaluationRunner:
                 self.environment.document_ids[key] for key in question.document_filter
             ]
             try:
-                result: RagResult = self.environment.rag.answer(question.question, top_k, selected)
+                result: RagResult = self.environment.rag.answer(question.question, top_k, selected, strategy)
                 latencies.append(result.generation_ms)
                 citations = [{
                     "reference": self._reference(citation),
@@ -273,7 +323,7 @@ class EvaluationRunner:
         return {
             "status": "completed" if not errors else "partial", "llm_dependent": True,
             "provider": self.environment.rag.llm.provider, "model": self.environment.rag.llm.model,
-            "top_k": top_k,
+            "top_k": top_k, "retrieval_strategy": strategy,
             "metric_definitions": {
                 "citation_precision": "dataset-relevant citations / all returned citations (micro average)",
                 "citation_coverage": "unique expected references cited / all expected references (micro average)",
@@ -309,3 +359,24 @@ def compare_results(current: dict, baseline: dict) -> dict:
                          for name in ("recall_at_k", "precision_at_k", "mrr_at_k", "hit_rate_at_k")}
     return {"compatible": compatible, "retrieval_metric_deltas": deltas,
             "regression": compatible and any(value < 0 for group in deltas.values() for value in group.values())}
+
+
+def compare_strategies(result: dict) -> dict:
+    strategies = result["retrieval"]["strategy_results"]
+    semantic = strategies.get("semantic")
+    if semantic is None:
+        return {"reference_strategy": None, "deltas_vs_semantic": {}}
+    comparisons = {}
+    for strategy, values in strategies.items():
+        if strategy == "semantic":
+            continue
+        metric_deltas = {}
+        for k, metrics in values["metrics"].items():
+            metric_deltas[k] = {name: round(metrics[name] - semantic["metrics"][k][name], 6)
+                                for name in ("recall_at_k", "precision_at_k", "mrr_at_k", "hit_rate_at_k")}
+        comparisons[strategy] = {
+            "metric_deltas": metric_deltas,
+            "p50_latency_delta_ms": round(values["latency_ms"]["p50"] - semantic["latency_ms"]["p50"], 2),
+            "p95_latency_delta_ms": round(values["latency_ms"]["p95"] - semantic["latency_ms"]["p95"], 2),
+        }
+    return {"reference_strategy": "semantic", "deltas_vs_semantic": comparisons}

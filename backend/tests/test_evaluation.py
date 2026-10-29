@@ -8,7 +8,8 @@ import pytest
 from app.domain.rag import RetrievalResult, RetrievedChunk
 from app.evaluation.dataset import EvaluationReference, default_dataset_path, load_dataset
 from app.evaluation.metrics import answer_metrics, percentile, retrieval_metrics
-from app.evaluation.runner import EvaluationEnvironment, EvaluationRunner, compare_results
+from app.evaluation.runner import (EvaluationEnvironment, EvaluationRunner,
+                                   compare_results, compare_strategies)
 
 
 def ref(document="doc", page=1, chunk_order=0):
@@ -96,10 +97,15 @@ class RecordingRetrieval:
     def __init__(self, dataset):
         self.calls = []
         self.embeddings = SimpleNamespace(model="test", revision="r1", dimension=384, profile="p1")
+        self.semantic_candidates = 20
+        self.keyword_candidates = 20
+        self.rrf_constant = 60
+        self.reranker_candidates = 20
+        self.reranker = SimpleNamespace(provider="test", model="reranker", revision="r2")
         self.dataset = dataset
 
-    def retrieve(self, query, top_k, document_ids):
-        self.calls.append((query, top_k, document_ids))
+    def retrieve(self, query, top_k, document_ids, strategy=None):
+        self.calls.append((query, top_k, document_ids, strategy))
         question = next(item for item in self.dataset.questions if item.question == query)
         chunks = []
         for reference in question.relevant[:top_k]:
@@ -129,6 +135,36 @@ def test_runner_is_reproducible_and_applies_document_filters(tmp_path):
     assert first_retrieval.calls[filtered_index][2] == expected_ids
     assert second_retrieval.calls == first_retrieval.calls
     assert first["answer_evaluation"]["status"] == "disabled"
+
+
+def test_runner_compares_all_strategies_on_identical_questions_and_judgments(tmp_path):
+    dataset = load_dataset(default_dataset_path())
+    ids = {document.key: uuid5(NAMESPACE_URL, document.key) for document in dataset.documents}
+    retrieval = RecordingRetrieval(dataset)
+    environment = EvaluationEnvironment(retrieval, None, ids, {value: key for key, value in ids.items()}, "test")
+    result = EvaluationRunner(dataset, environment, SimpleNamespace(embedding_provider="test"),
+                              "fixed", tmp_path).run([1, 3], 3,
+                                                     ["semantic", "hybrid", "hybrid_rerank"])
+    strategies = result["retrieval"]["strategy_results"]
+    assert list(strategies) == ["semantic", "hybrid", "hybrid_rerank"]
+    assert all([case["question_id"] for case in value["cases"]] ==
+               [question.id for question in dataset.questions] for value in strategies.values())
+    assert all(value["metrics"] == strategies["semantic"]["metrics"] for value in strategies.values())
+    comparison = compare_strategies(result)
+    assert comparison["reference_strategy"] == "semantic"
+    assert all(delta == 0 for strategy in comparison["deltas_vs_semantic"].values()
+               for metrics in strategy["metric_deltas"].values() for delta in metrics.values())
+
+
+@pytest.mark.parametrize("strategies", [[], ["keyword"], ["semantic", "unknown"]])
+def test_runner_rejects_invalid_strategy_sets(tmp_path, strategies):
+    dataset = load_dataset(default_dataset_path())
+    ids = {document.key: uuid5(NAMESPACE_URL, document.key) for document in dataset.documents}
+    retrieval = RecordingRetrieval(dataset)
+    environment = EvaluationEnvironment(retrieval, None, ids, {value: key for key, value in ids.items()}, "test")
+    with pytest.raises(ValueError):
+        EvaluationRunner(dataset, environment, SimpleNamespace(embedding_provider="test"),
+                         "fixed", tmp_path).run([1], 1, strategies)
 
 
 @pytest.mark.parametrize("ks", [[], [0], [21], [True]])

@@ -26,4 +26,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: requires migrated local PostgreSQL (RUN_DB_TESTS=1)", "semantic: real MiniLM weights (RUN_SEMANTIC_TESTS=1)", "llm_smoke: opt-in real local provider (RUN_LLM_SMOKE=1)"]
+markers = ["integration: requires migrated local PostgreSQL (RUN_DB_TESTS=1)", "semantic: real MiniLM weights (RUN_SEMANTIC_TESTS=1)", "reranker: real pinned cross-encoder weights (RUN_RERANKER_TESTS=1)", "llm_smoke: opt-in real local provider (RUN_LLM_SMOKE=1)"]

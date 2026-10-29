@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "status": "reference_comparison_not_default_regression_gate",
+  "run": {
+    "run_id": "milestone-2cb-all-strategies",
+    "created_at_utc": "2026-10-29T06:08:46+00:00",
+    "source_revision": "working tree based on ba1bc620097f7e3a042ff5c61aab1c2f992619cc",
+    "production_counts_before": [1, 3],
+    "production_counts_after": [1, 3],
+    "production_data_mutated": false
+  },
+  "dataset": {
+    "version": "researchlab-rag-eval-v1",
+    "sha256": "7d0dec7dc2dad75f2d0abfcd43a86c6c8994e4c9efd4481fb8c02da524fe37e3",
+    "answerable_question_count": 6,
+    "unanswerable_question_count": 2
+  },
+  "embedding": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "dimension": 384,
+    "profile": "7b9b125c9b67b1a84b8a4bafd993c2cd1da91042688feeaf9cab6c55cda3778b"
+  },
+  "reranker": {
+    "model": "cross-encoder/ms-marco-MiniLM-L6-v2",
+    "revision": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+    "candidate_count": 20
+  },
+  "configuration": {
+    "k_values": [1, 3, 5],
+    "min_similarity": 0.15,
+    "semantic_candidate_count": 20,
+    "keyword_candidate_count": 20,
+    "rrf_fusion_constant": 60,
+    "keyword_search": "PostgreSQL english websearch_to_tsquery + ts_rank_cd"
+  },
+  "strategies": {
+    "semantic": {
+      "metrics": {
+        "1": {"recall_at_k": 0.75, "precision_at_k": 0.833333, "mrr_at_k": 0.833333, "hit_rate_at_k": 0.833333},
+        "3": {"recall_at_k": 1.0, "precision_at_k": 0.388889, "mrr_at_k": 0.916667, "hit_rate_at_k": 1.0},
+        "5": {"recall_at_k": 1.0, "precision_at_k": 0.233333, "mrr_at_k": 0.916667, "hit_rate_at_k": 1.0}
+      },
+      "latency_ms": {"sample_count": 8, "p50": 17.03, "p95": 21.57}
+    },
+    "hybrid": {
+      "metrics": {
+        "1": {"recall_at_k": 0.75, "precision_at_k": 0.833333, "mrr_at_k": 0.833333, "hit_rate_at_k": 0.833333},
+        "3": {"recall_at_k": 1.0, "precision_at_k": 0.388889, "mrr_at_k": 0.916667, "hit_rate_at_k": 1.0},
+        "5": {"recall_at_k": 1.0, "precision_at_k": 0.233333, "mrr_at_k": 0.916667, "hit_rate_at_k": 1.0}
+      },
+      "latency_ms": {"sample_count": 8, "p50": 20.87, "p95": 23.27}
+    },
+    "hybrid_rerank": {
+      "metrics": {
+        "1": {"recall_at_k": 0.916667, "precision_at_k": 1.0, "mrr_at_k": 1.0, "hit_rate_at_k": 1.0},
+        "3": {"recall_at_k": 1.0, "precision_at_k": 0.388889, "mrr_at_k": 1.0, "hit_rate_at_k": 1.0},
+        "5": {"recall_at_k": 1.0, "precision_at_k": 0.233333, "mrr_at_k": 1.0, "hit_rate_at_k": 1.0}
+      },
+      "latency_ms": {"sample_count": 8, "p50": 82.12, "p95": 133.51}
+    }
+  },
+  "conclusion": {
+    "default_strategy": "semantic",
+    "hybrid_quality_improvement_observed": false,
+    "reranker_first_result_improvement_observed": true,
+    "limitation": "Eight synthetic questions are insufficient to establish general production improvement."
+  }
+}

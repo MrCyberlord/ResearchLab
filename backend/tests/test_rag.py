@@ -13,7 +13,7 @@ from app.domain.documents import EmbeddingFailure, IncompatibleEmbeddings
 from app.domain.embeddings import LEXICAL_PROFILE
 from app.domain.rag import (
     LLMInvalidResponse, LLMResult, LLMTimeout, LLMUnavailable, QuestionInvalid,
-    RetrievedChunk, SourceReference, TokenUsage,
+    RerankerUnavailable, RetrievedChunk, SourceReference, TokenUsage,
 )
 from app.infrastructure.config import Settings
 from app.infrastructure.embeddings import LocalHashEmbeddings
@@ -266,6 +266,7 @@ def client():
     ("/api/retrieval", {"query": "valid", "top_k": 0}),
     ("/api/retrieval", {"query": "valid", "top_k": 21}),
     ("/api/retrieval", {"query": "valid", "document_ids": ["not-a-uuid"]}),
+    ("/api/retrieval", {"query": "valid", "strategy": "lexical"}),
     ("/api/rag/questions", {"question": " \t "}),
     ("/api/rag/questions", {"question": "x" * 2001}),
     ("/api/rag/questions", {"question": "valid", "document_ids": ["not-a-uuid"]}),
@@ -278,6 +279,7 @@ def test_api_returns_retrieval_and_grounded_citations(client):
     retrieval_response = client.post("/api/retrieval", json={"query": "Warranty?"})
     assert retrieval_response.status_code == 200, retrieval_response.text
     assert len(retrieval_response.json()["chunks"]) == 1
+    assert retrieval_response.json()["strategy"] == "semantic"
     response = client.post("/api/rag/questions", json={"question": "Warranty?"})
     assert response.status_code == 200, response.text
     result = response.json()
@@ -286,6 +288,7 @@ def test_api_returns_retrieval_and_grounded_citations(client):
     assert result["citations"][0]["page_number"] == 2
     assert result["citations"][0]["chunk_id"] == 23
     assert result["usage"]["prompt_tokens"] == 90
+    assert result["retrieval_strategy"] == "semantic"
 
 
 def test_api_empty_selection_is_insufficient_evidence(client):
@@ -297,6 +300,7 @@ def test_api_empty_selection_is_insufficient_evidence(client):
 
 @pytest.mark.parametrize("failure,status", [
     (IncompatibleEmbeddings(), 409), (EmbeddingFailure("Safe embedding failure"), 503),
+    (RerankerUnavailable(), 503),
     (LLMUnavailable(), 503), (LLMTimeout(), 504), (LLMInvalidResponse(), 502),
 ])
 def test_api_reports_pipeline_failures(client, failure, status):
@@ -313,6 +317,9 @@ def test_rag_configuration_is_available_without_database_or_provider_calls(clien
     assert response.status_code == 200
     config = response.json()
     assert config["default_top_k"] == 5 and config["max_top_k"] == 20
+    assert config["default_strategy"] == "semantic"
+    assert config["available_strategies"] == ["semantic", "hybrid", "hybrid_rerank"]
+    assert config["reranker_model"] == "cross-encoder/ms-marco-MiniLM-L6-v2"
     assert config["llm_provider"] == "ollama"
     assert config["max_question_chars"] == 2000
 

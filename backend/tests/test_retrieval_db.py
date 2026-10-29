@@ -94,6 +94,30 @@ def test_document_filter_is_applied_before_top_k_and_never_broadens(db):
     assert repository.search(vector(), FixedEmbeddings.profile, 5, .25, [uuid4()]) == []
 
 
+def test_postgresql_keyword_search_ranks_terms_safely_and_applies_document_filter(db):
+    best = seed(db, "best-keyword.pdf", [(1, "Quasar calibration repeats quasar calibration checks.", vector())])
+    other = seed(db, "other-keyword.pdf", [(1, "A calibration procedure for the quasar sensor.", vector(.8, .6))])
+    unrelated = seed(db, "garden.pdf", [(1, "Tomato seedlings need warm soil.", vector(0, 1))])
+    repository = SQLAlchemyRetrievalRepository(db)
+    matches = repository.keyword_search("quasar calibration", vector(), FixedEmbeddings.profile, 5, None)
+    assert [item.document_id for item in matches[:2]] == [best.id, other.id]
+    assert all(item.document_id != unrelated.id for item in matches)
+    assert matches[0].distance == pytest.approx(0, abs=1e-6)
+    selected = repository.keyword_search("quasar calibration", vector(), FixedEmbeddings.profile, 5, [other.id])
+    assert [item.document_id for item in selected] == [other.id]
+    assert repository.keyword_search("quasar calibration", vector(), FixedEmbeddings.profile, 5, []) == []
+    # websearch_to_tsquery accepts raw user syntax without SQL/query-parser errors.
+    assert repository.keyword_search('""" ((( OR -', vector(), FixedEmbeddings.profile, 5, None) == []
+
+
+def test_keyword_search_vector_has_gin_index_in_isolated_schema(db):
+    definition = db.scalar(text("""
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = current_schema() AND indexname = 'ix_chunks_search_vector'
+    """))
+    assert definition and "USING gin" in definition and "search_vector" in definition
+
+
 def test_equal_distance_results_have_stable_chunk_order(db):
     document = seed(db, "ties.pdf", [(1, "One.", vector()), (1, "Two.", vector()), (2, "Three.", vector())])
     repository = SQLAlchemyRetrievalRepository(db)
@@ -153,10 +177,20 @@ def test_document_listing_and_filtered_http_questions(db):
         response = client.post("/api/retrieval", json={"query": "Evidence?", "document_ids": [str(second.id)]})
         assert response.status_code == 200, response.text
         assert [item["document_id"] for item in response.json()["chunks"]] == [str(second.id)]
+        hybrid = client.post("/api/retrieval", json={"query": "Selected document evidence",
+                             "strategy": "hybrid", "document_ids": [str(second.id)]})
+        assert hybrid.status_code == 200, hybrid.text
+        assert hybrid.json()["strategy"] == "hybrid"
+        assert {item["document_id"] for item in hybrid.json()["chunks"]} == {str(second.id)}
         answer = client.post("/api/rag/questions", json={"question": "Evidence?", "document_ids": [str(second.id)]})
         assert answer.status_code == 200, answer.text
         assert {citation["document_id"] for citation in answer.json()["citations"]} == {str(second.id)}
         assert all(citation["document_id"] != str(first.id) for citation in answer.json()["citations"])
+        hybrid_answer = client.post("/api/rag/questions", json={"question": "Selected document evidence",
+                                    "strategy": "hybrid", "document_ids": [str(second.id)]})
+        assert hybrid_answer.status_code == 200, hybrid_answer.text
+        assert hybrid_answer.json()["retrieval_strategy"] == "hybrid"
+        assert {citation["document_id"] for citation in hybrid_answer.json()["citations"]} == {str(second.id)}
         assert client.get("/api/documents", params={"limit": 101}).status_code == 422
 
 

@@ -4,6 +4,9 @@ from typing import Literal
 from uuid import UUID
 
 
+RetrievalStrategy = Literal["semantic", "hybrid", "hybrid_rerank"]
+
+
 @dataclass(frozen=True)
 class RetrievedChunk:
     chunk_id: int
@@ -24,6 +27,7 @@ class RetrievalResult:
     chunks: list[RetrievedChunk]
     embedding_profile: str
     retrieval_ms: float
+    strategy: RetrievalStrategy = "semantic"
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,7 @@ class RagResult:
     llm_provider: str
     llm_model: str
     usage: TokenUsage | None
+    retrieval_strategy: RetrievalStrategy = "semantic"
 
 
 class QuestionInvalid(Exception):
@@ -79,6 +84,10 @@ class QuestionInvalid(Exception):
 
 
 class RetrievalUnavailable(Exception):
+    pass
+
+
+class RerankerUnavailable(Exception):
     pass
 
 

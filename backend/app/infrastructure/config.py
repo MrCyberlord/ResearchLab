@@ -1,10 +1,14 @@
 from functools import lru_cache
 from app.domain.embeddings import MINILM_MODEL, MINILM_REVISION
 from pathlib import Path
+import re
 from typing import Literal
 
 from pydantic import PostgresDsn, SecretStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+RERANKER_REVISION = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
 
 
 class Settings(BaseSettings):
@@ -34,6 +38,18 @@ class Settings(BaseSettings):
     embedding_dimension: Literal[384] = 384
     retrieval_top_k: int = Field(default=5, ge=1, le=20)
     retrieval_min_similarity: float = Field(default=0.25, ge=-1, le=1)
+    retrieval_strategy: Literal["semantic", "hybrid", "hybrid_rerank"] = "semantic"
+    semantic_candidate_count: int = Field(default=20, ge=20, le=100)
+    keyword_candidate_count: int = Field(default=20, ge=20, le=100)
+    rrf_fusion_constant: int = Field(default=60, ge=1, le=1000)
+    reranker_provider: Literal["cross_encoder"] = "cross_encoder"
+    reranker_model: Literal["cross-encoder/ms-marco-MiniLM-L6-v2"] = RERANKER_MODEL
+    reranker_revision: str = RERANKER_REVISION
+    reranker_cache_dir: Path = Path(__file__).resolve().parents[3] / ".cache" / "models"
+    reranker_local_files_only: bool = False
+    reranker_batch_size: int = Field(default=16, ge=1, le=64)
+    reranker_cpu_threads: int = Field(default=2, ge=1, le=32)
+    reranker_candidate_count: int = Field(default=20, ge=20, le=100)
     rag_max_context_bytes: int = Field(default=4000, ge=128, le=50000)
     rag_max_prompt_bytes: int = Field(default=6000, ge=2048, le=64000)
     llm_provider: Literal["ollama"] = "ollama"
@@ -52,9 +68,10 @@ class Settings(BaseSettings):
         if self.embedding_model != expected:
             raise ValueError("EMBEDDING_MODEL does not match EMBEDDING_PROVIDER")
         if self.embedding_provider == "sentence_transformers":
-            import re
             if not re.fullmatch(r"[0-9a-f]{40}", self.embedding_revision):
                 raise ValueError("EMBEDDING_REVISION must be an immutable 40-character model commit")
+        if not re.fullmatch(r"[0-9a-f]{40}", self.reranker_revision):
+            raise ValueError("RERANKER_REVISION must be an immutable 40-character model commit")
         if self.rag_max_context_bytes > self.rag_max_prompt_bytes:
             raise ValueError("RAG_MAX_CONTEXT_BYTES must not exceed RAG_MAX_PROMPT_BYTES")
         if self.rag_max_prompt_bytes + self.llm_max_output_tokens + 1024 > self.llm_context_tokens:
@@ -81,6 +98,12 @@ class Settings(BaseSettings):
     @field_validator("embedding_cache_dir", mode="before")
     @classmethod
     def resolve_embedding_cache(cls, value):
+        path = Path(value)
+        return path if path.is_absolute() else Path(__file__).resolve().parents[3] / path
+
+    @field_validator("reranker_cache_dir", mode="before")
+    @classmethod
+    def resolve_reranker_cache(cls, value):
         path = Path(value)
         return path if path.is_absolute() else Path(__file__).resolve().parents[3] / path
 

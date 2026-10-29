@@ -70,7 +70,7 @@ def ingestion(db, embeddings=None, repository=None):
 
 
 def test_schema_and_vector(db):
-    assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0003_embedding_profiles"
+    assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0004_keyword_search"
     assert db.scalar(text("SELECT extversion FROM pg_extension WHERE extname='vector'"))
     assert db.scalar(text("SELECT '[1,2]'::vector <-> '[2,2]'::vector")) == 1
 
@@ -237,3 +237,29 @@ def test_profile_migration_preserves_and_classifies_legacy_data(db, models):
     profile = db.scalar(text("SELECT profile FROM embedding_corpus"))
     assert (profile == LEXICAL_PROFILE) == (models == ["local-hash-v1"])
     # Fixture rollback also removes this isolated test schema.
+
+
+def test_keyword_migration_backfills_existing_text_and_tracks_updates(db):
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    schema = "test_keyword_migration_" + uuid4().hex
+    db.execute(text(f'CREATE SCHEMA "{schema}"'))
+    db.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+    db.execute(text("CREATE TABLE chunks (id serial PRIMARY KEY, text text NOT NULL)"))
+    db.execute(text("INSERT INTO chunks (text) VALUES ('Existing quasar calibration instructions')"))
+    path = Path(__file__).resolve().parents[1] / "migrations/versions/0004_keyword_search.py"
+    spec = importlib.util.spec_from_file_location("keyword_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with Operations.context(MigrationContext.configure(db.connection())):
+        module.upgrade()
+    assert db.scalar(text("SELECT search_vector @@ websearch_to_tsquery('english', 'quasar') FROM chunks")) is True
+    db.execute(text("UPDATE chunks SET text = 'Updated nebula maintenance instructions'"))
+    assert db.scalar(text("SELECT search_vector @@ websearch_to_tsquery('english', 'nebula') FROM chunks")) is True
+    definition = db.scalar(text("""
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = current_schema() AND indexname = 'ix_chunks_search_vector'
+    """))
+    assert definition and "USING gin" in definition

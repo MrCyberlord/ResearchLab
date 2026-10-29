@@ -2,7 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Computed, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
@@ -44,10 +45,14 @@ class ChunkRow(Base):
         CheckConstraint("page_number > 0 AND chunk_order >= 0", name="ck_chunks_metadata"),
         CheckConstraint("length(text) > 0", name="ck_chunks_nonempty_text"),
         Index("ix_chunks_document_page", "document_id", "page_number"),
+        Index("ix_chunks_search_vector", "search_vector", postgresql_using="gin"),
     )
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     page_number: Mapped[int] = mapped_column(Integer)
     chunk_order: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english'::regconfig, text)", persisted=True), nullable=False
+    )
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSION))

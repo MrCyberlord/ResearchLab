@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.evaluation.dataset import default_dataset_path, load_dataset
-from app.evaluation.runner import EvaluationRunner, IsolatedEvaluationDatabase, compare_results
+from app.evaluation.runner import (EvaluationRunner, IsolatedEvaluationDatabase,
+                                   compare_results, compare_strategies)
 from app.infrastructure.config import Settings
 
 
@@ -25,14 +26,15 @@ def report(result: dict) -> str:
         f"{result['dataset']['unanswerable_question_count']} unanswerable)",
         f"Embedding: `{result['embedding']['model']}@{result['embedding']['revision']}`; "
         f"profile `{result['embedding']['profile']}`", "",
-        "| K | Recall@K | Precision@K | MRR@K | Hit Rate@K |", "| ---: | ---: | ---: | ---: | ---: |",
+        "| Strategy | K | Recall@K | Precision@K | MRR@K | Hit Rate@K | p50 ms | p95 ms |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for k, values in result["retrieval"]["metrics"].items():
-        lines.append(f"| {k} | {values['recall_at_k']:.3f} | {values['precision_at_k']:.3f} | "
-                     f"{values['mrr_at_k']:.3f} | {values['hit_rate_at_k']:.3f} |")
-    latency = result["retrieval"]["latency_ms"]
-    lines += ["", f"Retrieval latency: p50 {latency['p50']} ms; p95 {latency['p95']} ms "
-                    f"({latency['sample_count']} queries)."]
+    for strategy, strategy_result in result["retrieval"]["strategy_results"].items():
+        latency = strategy_result["latency_ms"]
+        for k, values in strategy_result["metrics"].items():
+            lines.append(f"| {strategy} | {k} | {values['recall_at_k']:.3f} | {values['precision_at_k']:.3f} | "
+                         f"{values['mrr_at_k']:.3f} | {values['hit_rate_at_k']:.3f} | "
+                         f"{latency['p50']} | {latency['p95']} |")
     answers = result["answer_evaluation"]
     if answers["status"] == "disabled":
         lines += ["", "Answer evaluation: disabled (optional; requires `--with-llm`)."]
@@ -55,6 +57,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--dataset", type=Path, default=default_dataset_path())
     command.add_argument("--k", type=int, nargs="+", default=[1, 3, 5])
     command.add_argument("--answer-top-k", type=int, default=5)
+    command.add_argument("--strategies", nargs="+", choices=["semantic", "hybrid", "hybrid_rerank"],
+                         default=["semantic"])
+    command.add_argument("--answer-strategy", choices=["semantic", "hybrid", "hybrid_rerank"],
+                         default="semantic")
     command.add_argument("--with-llm", action="store_true", help="Run optional local Ollama answer evaluation.")
     command.add_argument("--run-id", default=None)
     command.add_argument("--output", type=Path, default=Path(".cache/evaluations/latest.json"))
@@ -72,10 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     environment_manager = IsolatedEvaluationDatabase(settings, dataset, arguments.with_llm)
     with environment_manager as environment:
         result = EvaluationRunner(dataset, environment, settings, run_id, repository_root()).run(
-            arguments.k, arguments.answer_top_k
+            arguments.k, arguments.answer_top_k, arguments.strategies, arguments.answer_strategy
         )
     result["run"]["production_counts_before"] = list(environment_manager.public_counts_before)
     result["run"]["production_counts_after"] = list(environment_manager.public_counts_after)
+    result["strategy_comparison"] = compare_strategies(result)
     if arguments.baseline.exists():
         result["baseline_comparison"] = compare_results(result, json.loads(arguments.baseline.read_text("utf-8")))
     arguments.output.parent.mkdir(parents=True, exist_ok=True)

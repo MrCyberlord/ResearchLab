@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from dataclasses import fields
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,27 @@ class SQLAlchemyRetrievalRepository:
             return [RetrievedChunk(chunk.id, chunk.document_id, filename, chunk.page_number,
                                    chunk.chunk_order, chunk.text, max(0.0, min(2.0, float(score))))
                     for chunk, filename, score in self.session.execute(statement)]
+
+    def keyword_search(self, query, vector, profile, top_k, document_ids):
+        with self._read():
+            self._check_profile_locked(profile)
+            if document_ids == []:
+                return []
+            language = literal_column("'english'::regconfig")
+            tsquery = func.websearch_to_tsquery(language, query)
+            rank = func.ts_rank_cd(ChunkRow.search_vector, tsquery).label("keyword_rank")
+            distance = ChunkRow.embedding.cosine_distance(vector).label("distance")
+            statement = (select(ChunkRow, DocumentRow.filename, distance, rank)
+                .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
+                .where(DocumentRow.embedding_profile == profile,
+                       ChunkRow.search_vector.op("@@")(tsquery))
+                .order_by(rank.desc(), ChunkRow.document_id, ChunkRow.chunk_order, ChunkRow.id)
+                .limit(top_k))
+            if document_ids is not None:
+                statement = statement.where(DocumentRow.id.in_(document_ids))
+            return [RetrievedChunk(chunk.id, chunk.document_id, filename, chunk.page_number,
+                                   chunk.chunk_order, chunk.text, max(0.0, min(2.0, float(score))))
+                    for chunk, filename, score, _ in self.session.execute(statement)]
 
     def list_documents(self, limit: int, offset: int):
         with self._read():

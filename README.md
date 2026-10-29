@@ -52,7 +52,7 @@ docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -
 .\.venv\Scripts\alembic.exe -c backend/alembic.ini current
 ```
 
-Expect a `vector` row and revision `0003_embedding_profiles`. For offline migration SQL, set `DATABASE_URL` and run `alembic -c backend/alembic.ini upgrade head --sql` using the virtual environment executable. Offline generation does not verify a live database.
+Expect a `vector` row and revision `0004_keyword_search`. For offline migration SQL, set `DATABASE_URL` and run `alembic -c backend/alembic.ini upgrade head --sql` using the virtual environment executable. Offline generation does not verify a live database.
 
 ## Architecture
 
@@ -340,4 +340,60 @@ The opt-in `ollama/gemma3:4b` reference run completed all eight questions at K=5
 
 This is a small baseline, not a statistically strong benchmark. Do not tune prompts, thresholds or questions against these eight examples and then present the same-set score as generalization. Preserve this version for comparisons; create a new dataset version for annotation changes, and keep a separate unseen holdout before optimizing. Do not upload these fixtures into a manual/production corpus during evaluation. The corpus is synthetic and cannot establish real-domain quality, prompt-injection resilience or factual entailment.
 
-Milestone 2C-A adds no migrations and no frontend changes. Hybrid search, reranking, LangGraph, evaluation dashboards and deployment remain out of scope.
+Milestone 2C-A added no migrations or frontend changes. Its semantic baseline remains the stable comparison point for Milestone 2C-B below.
+
+## Hybrid retrieval and optional reranking (Milestone 2C-B)
+
+Semantic retrieval remains the default. Both RAG POST endpoints now accept an optional `strategy` of `semantic`, `hybrid` or `hybrid_rerank`; omitting it uses `RETRIEVAL_STRATEGY`, whose default is `semantic`. The selected strategy is returned as `strategy` by `/api/retrieval` and `retrieval_strategy` by `/api/rag/questions`. Citation metadata, bounded context, document filters and embedding-profile checks are unchanged.
+
+Migration `0004_keyword_search` adds a stored English `tsvector` generated from chunk text and a GIN index. Keyword search passes the validated question as a bound value to PostgreSQL `websearch_to_tsquery('english', ...)`, ranks matches with `ts_rank_cd`, and applies document/profile filters before limiting. Raw web-search punctuation cannot become SQL. English stemming is useful for the current corpus but is not multilingual tokenization; changing the text-search configuration requires a migration and a new evaluation.
+
+Hybrid retrieval independently takes `SEMANTIC_CANDIDATE_COUNT` and `KEYWORD_CANDIDATE_COUNT` candidates, then applies Reciprocal Rank Fusion using `1 / (RRF_FUSION_CONSTANT + rank)`. Duplicate results contribute at most once per input ranking and are deduplicated by persistent chunk ID. Final chunks retain their actual cosine distance even when discovered by keyword search, preserving the existing API contract. Defaults use 20 candidates from each ranking and an RRF constant of 60.
+
+`hybrid_rerank` passes up to `RERANKER_CANDIDATE_COUNT` fused candidates to the local `cross-encoder/ms-marco-MiniLM-L6-v2` model pinned at revision `233902d25c440f23af6f7d6e94d2946bac0bee0a`. It uses the existing Sentence Transformers runtime, CPU inference and safetensors, loads lazily on first use, and has no hosted or paid API fallback. A missing, invalid or unavailable model returns a provider error rather than silently falling back to another strategy.
+
+The required cached cross-encoder snapshot in the implementation environment contains about 91.8 MB of files. Model loading and inference require additional RAM; expect a few hundred MB of working memory depending on PyTorch and batch size. On Windows without symlink support, the Hugging Face cache may consume extra disk space. To download and verify the exact pinned revision once:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -c "from app.infrastructure.config import Settings; from app.infrastructure.reranker import create_reranker_provider; p=create_reranker_provider(Settings()); print(p.model, p.revision, p.score('Which passage is relevant?', ['A relevant passage.', 'Unrelated text.']))"
+Set-Location ..
+```
+
+After it is cached, set `RERANKER_LOCAL_FILES_ONLY=true`, `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` for reproducible offline runs. `GET /api/rag/config` reports effective strategies, candidate counts, fusion constant and pinned reranker identity without loading the model.
+
+Run all retrieval strategies on the exact Milestone 2C-A dataset and judgments:
+
+```powershell
+$env:EMBEDDING_LOCAL_FILES_ONLY='true'
+$env:RERANKER_LOCAL_FILES_ONLY='true'
+$env:HF_HUB_OFFLINE='1'
+$env:TRANSFORMERS_OFFLINE='1'
+Set-Location backend
+..\.venv\Scripts\python.exe -m app.evaluation.cli `
+  --run-id local-hybrid-comparison `
+  --strategies semantic hybrid hybrid_rerank `
+  --k 1 3 5 `
+  --output ..\.cache\evaluations\hybrid-comparison.json `
+  --report ..\.cache\evaluations\hybrid-comparison.md
+Set-Location ..
+Remove-Item Env:EMBEDDING_LOCAL_FILES_ONLY, Env:RERANKER_LOCAL_FILES_ONLY, Env:HF_HUB_OFFLINE, Env:TRANSFORMERS_OFFLINE
+```
+
+The JSON contains per-strategy configurations, model revisions, raw rankings, metrics, p50/p95 latency and deltas versus semantic. Retrieval comparison does not call Ollama. `--with-llm --answer-strategy hybrid_rerank` remains separately opt-in for answer evaluation. The measured reference summary is versioned at `backend/evaluation/baselines/hybrid-comparison-v1.json`; the original semantic baseline remains the default regression gate.
+
+The full backend verification enables `RUN_DB_TESTS=1`, `RUN_SEMANTIC_TESTS=1`, `RUN_RERANKER_TESTS=1` and, when Ollama is available, `RUN_LLM_SMOKE=1`. Set both local-files-only flags and the Hugging Face/Transformers offline flags after the two pinned models are cached; ordinary unit tests never download or invoke either model.
+
+### Measured comparison
+
+The real local comparison used the unchanged eight-question CC0 dataset, pinned MiniLM, exact pgvector cosine search, PostgreSQL full-text search and the pinned cached cross-encoder. Production counts remained 1 document / 3 chunks before and after the rollback-isolated run.
+
+| Strategy | Recall@1 | Precision@1 | MRR@1 | Hit Rate@1 | Recall@3 | MRR@3 | p50 | p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| semantic | 0.750 | 0.833 | 0.833 | 0.833 | 1.000 | 0.917 | 17.03 ms | 21.57 ms |
+| hybrid | 0.750 | 0.833 | 0.833 | 0.833 | 1.000 | 0.917 | 20.87 ms | 23.27 ms |
+| hybrid_rerank | 0.917 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 82.12 ms | 133.51 ms |
+
+At K=5 all strategies had Recall 1.000, Precision 0.233 and Hit Rate 1.000; reranking retained MRR 1.000 versus 0.917 for the other strategies. Plain hybrid produced no quality improvement on this dataset and added 3.84 ms p50 latency. Reranking improved first-result ordering but added 65.09 ms p50 and 111.94 ms p95 over semantic. This is evidence for keeping semantic as the default: the observed reranker gain is promising, but eight synthetic questions are too small to establish general improvement, and the latency trade-off is material. No claim is made about production-domain quality, multilingual search or factual answer faithfulness.
+
+Milestone 2C-B adds no frontend dashboard, LangGraph, deployment or paid services. ANN search, more languages and larger held-out evaluation sets remain future work.
