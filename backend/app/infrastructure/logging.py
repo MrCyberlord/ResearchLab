@@ -16,7 +16,7 @@ class JsonFormatter(logging.Formatter):
                     "retry_scheduled", "remaining_budget_ms", "evidence_count",
                     "evidence_added_count", "document_filter_count", "query_fingerprint",
                     "agent_action", "agent_scope", "agent_reason", "agent_error_type",
-                    "agent_error_code"):
+                    "agent_error_code", "comparison_pipeline", "comparison_error_code"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         if record.exc_info:

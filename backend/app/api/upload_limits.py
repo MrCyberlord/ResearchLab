@@ -16,7 +16,10 @@ class UploadBodyLimit:
         if path == "/api/documents":
             limit = self.max_bytes
             detail = {"code": "file_too_large", "message": "Upload exceeds the configured request-size limit."}
-        elif path in {"/api/retrieval", "/api/rag/questions", "/api/agent/questions"}:
+        elif path in {
+            "/api/retrieval", "/api/rag/questions", "/api/agent/questions",
+            "/api/compare/questions",
+        }:
             limit = self.max_json_bytes
             detail = {"code": "request_too_large", "message": "JSON request exceeds 32 KiB."}
         else:

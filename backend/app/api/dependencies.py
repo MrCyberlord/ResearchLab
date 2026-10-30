@@ -16,6 +16,7 @@ from app.application.agent_graph import AgentGraph
 from app.application.grounding import GroundedAnswerService
 from app.infrastructure.document_search import SessionDocumentSearchTool, build_retrieval_service
 from app.infrastructure.agent_llm import create_agent_generation_provider
+from app.application.comparison import ComparisonService
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -67,3 +68,10 @@ def get_agent_service(request: Request) -> AgentService:
     return AgentService(graph, settings.agent_max_question_chars,
                         settings.agent_graph_step_limit,
                         settings.agent_execution_timeout_seconds)
+
+
+def get_comparison_service(
+    rag: RagService = Depends(get_rag_service),
+    agent: AgentService = Depends(get_agent_service),
+) -> ComparisonService:
+    return ComparisonService(rag, agent)

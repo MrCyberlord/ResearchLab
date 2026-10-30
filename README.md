@@ -614,3 +614,117 @@ Run the focused deterministic contracts without Ollama:
   backend/tests/test_agent_evaluation.py `
   backend/tests/test_health.py
 ```
+
+## Backend RAG versus Agentic comparison (Milestone 4A)
+
+`POST /api/compare/questions` runs the existing RAG service followed by the existing
+Agentic service. Execution is deliberately sequential so the two pipelines do not
+compete for local Ollama CPU and memory. A failure in either pipeline is converted to
+that pipeline's typed, sanitized error result; the other pipeline still runs. The
+comparison layer does not retry, regenerate or reproduce either pipeline's retrieval,
+generation, grounding or execution-limit logic.
+
+The request accepts the same question, optional document filter and retrieval strategy
+for both pipelines:
+
+```json
+{
+  "question": "What maintenance interval does the uploaded manual specify?",
+  "document_ids": ["4cb3ec14-d581-4c8a-aec5-9dfa7c52fc30"],
+  "strategy": "hybrid"
+}
+```
+
+`document_ids: null` means all uploaded documents, a UUID list restricts both
+pipelines to exactly those documents, and an empty list means no documents. Strategy
+may be `semantic`, `hybrid` or `hybrid_rerank`; omission preserves each service's
+configured default. The response records the interpreted scope so callers do not need
+to infer it.
+
+A successful response always has HTTP 200 when the request itself is valid, even when
+one or both independently executed pipelines fail. Its shape is:
+
+```json
+{
+  "execution_mode": "sequential",
+  "total_elapsed_ms": 18432.7,
+  "document_scope": "selected_documents",
+  "requested_strategy": "hybrid",
+  "activity_metrics_are_quality_measures": false,
+  "rag": {
+    "pipeline": "rag",
+    "status": "answered",
+    "grounding_mode": "document_grounded",
+    "answer": "Inspect it every six months [S1].",
+    "message": null,
+    "citations": [{
+      "source_id": "S1",
+      "chunk_id": 42,
+      "document_id": "4cb3ec14-d581-4c8a-aec5-9dfa7c52fc30",
+      "filename": "manual.pdf",
+      "page_number": 3,
+      "chunk_order": 7,
+      "quote": "Inspect the assembly every six months."
+    }],
+    "elapsed_ms": 7102.4,
+    "error": null
+  },
+  "agentic": {
+    "pipeline": "agentic",
+    "status": "grounded",
+    "grounding_mode": "document_grounded",
+    "route": "document_research",
+    "answer": "The manual specifies six-month inspections [S1].",
+    "message": null,
+    "citations": [{"source_id": "S1", "chunk_id": 42, "document_id": "4cb3ec14-d581-4c8a-aec5-9dfa7c52fc30", "filename": "manual.pdf", "page_number": 3, "chunk_order": 7, "quote": "Inspect the assembly every six months."}],
+    "elapsed_ms": 11330.1,
+    "error": null,
+    "graph_steps": 5,
+    "tool_call_count": 1
+  }
+}
+```
+
+The OpenAPI schema contains the remaining nullable timing, model, usage and safe trace
+fields omitted from this abbreviated example. Comparison citations expose only the
+validated supporting quote and persistent source identity, not the complete retrieved
+chunk. Agent tool activity omits the model-authored raw search query and retains only
+counts, timings, strategy, remaining budget and a one-way query fingerprint. Node
+traces contain bounded enums, counts, error codes and timings; prompts, questions,
+document text, provider response bodies and secrets are never added by the comparison
+layer.
+
+RAG is always document-grounded and can return `answered`,
+`insufficient_evidence` or `error`. Agentic may instead return an ungrounded `direct`
+general-knowledge answer, a document-grounded `grounded` answer,
+`insufficient_evidence` or `error`. These grounding modes are explicit because a
+direct Agentic answer is not comparable to RAG evidence on the same terms. Citation
+counts, tool calls, graph steps, token usage and latency are activity/operational
+metrics, not answer-quality scores.
+
+Both services retain their existing deadlines, tool/graph limits and bounded grounded
+regeneration. Because execution is sequential, worst-case endpoint latency can approach
+the sum of both independent pipeline deadlines. Client cancellation is not claimed to
+forcibly stop separate Ollama computation. Milestone 4A adds no frontend, database
+migration, model dependency or evaluation claim.
+
+A single local end-to-end observation on 30 October 2026 used the existing two-page
+`germany_country_profile.pdf`, semantic retrieval and `ollama/gemma3:4b`. For the
+question `According to my uploaded PDF, what is Germany's population?`, RAG answered
+`83.47 million (31 December 2025)` in 63.18 seconds. Its citation identified page 1,
+chunk order 0, and a read-only database check confirmed that the quoted population text
+was an exact substring of stored chunk 49. Agentic remained correctly scoped to
+document research and retrieved all three scoped chunks, but after a second search added
+no new evidence and a repeated search was blocked, it abstained without citations in
+91.94 seconds. Total endpoint time was 155.12 seconds, approximately the sum of the two
+pipeline times as expected for sequential execution. This is a documented model-quality
+observation, not a benchmark or justification for question-specific routing, weaker
+grounding validation or prompt tuning.
+
+Run the deterministic comparison contracts without PostgreSQL or Ollama:
+
+```powershell
+$comparisonTemp = ".venv/pytest-m4a-$([guid]::NewGuid().ToString('N'))"
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider `
+  --basetemp=$comparisonTemp backend/tests/test_comparison.py
+```
