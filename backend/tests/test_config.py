@@ -8,6 +8,9 @@ def test_defaults():
     assert settings.app_env == "development"
     assert settings.cors_origins == ["http://localhost:5173"]
     assert settings.database_url is None
+    assert settings.agent_graph_step_limit == 20
+    assert settings.agent_max_tool_calls == 3
+    assert settings.agent_tool_top_k == 5
 
 
 def test_environment_overrides(monkeypatch):
@@ -25,6 +28,8 @@ def test_environment_overrides(monkeypatch):
     {"database_url": "sqlite:///data.db"},
     {"database_url": "postgresql://localhost/researchlab"},
     {"cors_origins": ["*"]}, {"cors_origins": ["https://example.com/path"]},
+    {"agent_graph_step_limit": 8, "agent_max_tool_calls": 3},
+    {"agent_max_context_bytes": 6001, "agent_max_prompt_bytes": 6000},
 ])
 def test_invalid_settings(values):
     with pytest.raises(ValidationError):

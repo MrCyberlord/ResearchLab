@@ -11,9 +11,10 @@ from app.application.retrieval import RetrievalService
 from app.application.rag import RagService
 from app.infrastructure.retrieval_repository import SQLAlchemyRetrievalRepository
 from app.infrastructure.llm import create_llm_provider
-from app.infrastructure.reranker import create_reranker_provider
 from app.application.agent import AgentService
 from app.application.agent_graph import AgentGraph
+from app.application.grounding import GroundedAnswerService
+from app.infrastructure.document_search import SessionDocumentSearchTool, build_retrieval_service
 from app.infrastructure.agent_llm import create_agent_generation_provider
 
 
@@ -41,14 +42,7 @@ def get_retrieval_repository(session: Session = Depends(get_session)) -> SQLAlch
 
 def get_retrieval_service(request: Request, repository=Depends(get_retrieval_repository)) -> RetrievalService:
     settings = request.app.state.settings
-    return RetrievalService(repository, create_embedding_provider(settings),
-                            settings.retrieval_top_k, settings.retrieval_min_similarity,
-                            default_strategy=settings.retrieval_strategy,
-                            semantic_candidates=settings.semantic_candidate_count,
-                            keyword_candidates=settings.keyword_candidate_count,
-                            rrf_constant=settings.rrf_fusion_constant,
-                            reranker=create_reranker_provider(settings),
-                            reranker_candidates=settings.reranker_candidate_count)
+    return build_retrieval_service(settings, repository)
 
 
 def get_rag_service(request: Request, retrieval: RetrievalService = Depends(get_retrieval_service)) -> RagService:
@@ -59,6 +53,17 @@ def get_rag_service(request: Request, retrieval: RetrievalService = Depends(get_
 
 def get_agent_service(request: Request) -> AgentService:
     settings = request.app.state.settings
-    graph = AgentGraph(create_agent_generation_provider(settings))
+    graph = AgentGraph(
+        create_agent_generation_provider(settings),
+        SessionDocumentSearchTool(request.app.state.session_factory, settings),
+        GroundedAnswerService(create_llm_provider(settings),
+                              settings.agent_max_context_bytes,
+                              settings.agent_max_prompt_bytes),
+        max_tool_calls=settings.agent_max_tool_calls,
+        max_tool_top_k=settings.agent_tool_top_k,
+        max_evidence_chunks=settings.agent_max_evidence_chunks,
+        decision_context_bytes=settings.agent_decision_context_bytes,
+    )
     return AgentService(graph, settings.agent_max_question_chars,
-                        settings.agent_graph_step_limit)
+                        settings.agent_graph_step_limit,
+                        settings.agent_execution_timeout_seconds)

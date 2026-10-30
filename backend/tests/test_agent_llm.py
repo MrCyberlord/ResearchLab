@@ -40,6 +40,91 @@ def test_agent_ollama_request_and_structured_response_contract():
     assert result.usage.prompt_tokens == 15 and result.usage.completion_tokens == 7
 
 
+def test_agent_ollama_tool_decision_is_model_generated_and_structured():
+    captured = []
+    responses = iter([
+        payload(message={"role": "assistant", "content": json.dumps({
+            "scope": "document_research",
+        })}),
+        payload(message={"role": "assistant", "content": json.dumps({
+            "action": "search_documents", "query": "kettle warranty duration", "top_k": 4,
+        })}),
+    ])
+    def handler(request):
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, json=next(responses))
+    result = provider(handler).decide(
+        "What do my documents say?", [{"searches": [], "evidence": []}], 3,
+    )
+    assert result.action == "search_documents"
+    assert result.scope == "document_research"
+    assert result.query == "kettle warranty duration" and result.top_k == 4
+    assert len(captured) == 2
+    scope_user = json.loads(captured[0]["messages"][1]["content"])
+    assert scope_user == {"question": "What do my documents say?"}
+    assert set(captured[0]["format"]["properties"]) == {"scope"}
+    user = json.loads(captured[1]["messages"][1]["content"])
+    assert user["question"] == "What do my documents say?"
+    assert user["document_search_calls_remaining"] == 3
+    assert "search_documents" in captured[1]["messages"][0]["content"]
+    assert captured[1]["format"]["discriminator"]["propertyName"] == "action"
+
+
+def test_general_scope_returns_direct_decision_without_tool_schema_call():
+    captured = []
+    body = payload(message={"role": "assistant", "content": json.dumps({
+        "scope": "general_knowledge",
+    })})
+    def handler(request):
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, json=body)
+    decision = provider(handler).decide(
+        "what is llm", [{"searches": [], "evidence": []}], 3,
+    )
+    assert decision.action == "answer_direct" and decision.scope == "general_knowledge"
+    assert decision.query is None and decision.top_k is None
+    assert len(captured) == 1
+
+
+@pytest.mark.parametrize("decision", [
+    {"action": "search_documents", "query": None, "top_k": 2},
+    {"action": "search_documents", "query": "query", "top_k": 21},
+    {"action": "answer_direct"},
+    {"action": "unknown"},
+    {"action": "answer_grounded", "query": "E1", "top_k": 1},
+])
+def test_invalid_structured_tool_decisions_are_rejected(decision):
+    responses = iter([
+        payload(message={"role": "assistant", "content": json.dumps({
+            "scope": "document_research",
+        })}),
+        payload(message={"role": "assistant", "content": json.dumps(decision)}),
+    ])
+    with pytest.raises(AgentLLMInvalidResponse):
+        provider(lambda request: httpx.Response(200, json=next(responses))).decide(
+            "question", [], 2,
+        )
+
+
+def test_document_terminal_action_has_no_permissive_tool_argument_fallback():
+    body = payload(message={"role": "assistant", "content": json.dumps({
+        "action": "answer_grounded",
+    })})
+    decision = provider(lambda request: httpx.Response(200, json=body)).decide(
+        "question", [{"searches": [{"query": "q"}], "evidence": [{"text": "e"}]}], 2,
+    )
+    assert decision.action == "answer_grounded"
+    assert decision.query is None and decision.top_k is None
+
+
+def test_invalid_scope_decision_is_rejected_before_document_action():
+    body = payload(message={"role": "assistant", "content": json.dumps({
+        "scope": "general_knowledge", "action": "answer_direct",
+    })})
+    with pytest.raises(AgentLLMInvalidResponse):
+        provider(lambda request: httpx.Response(200, json=body)).decide("question", [], 2)
+
+
 def test_agent_provider_factory_uses_agent_limits():
     settings = Settings(_env_file=None, llm_model="configured", agent_execution_timeout_seconds=33,
                         agent_max_output_tokens=256, agent_max_response_bytes=4096)

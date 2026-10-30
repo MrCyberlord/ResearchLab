@@ -32,3 +32,18 @@ def test_json_logging():
     assert payload["event"] == "request_completed"
     assert payload["status_code"] == 200
     assert payload["level"] == "INFO"
+
+
+def test_agent_tool_logging_whitelists_counts_not_sensitive_content():
+    record = logging.LogRecord("researchlab", logging.INFO, __file__, 1,
+                               "agent_tool_completed", (), None)
+    record.agent_tool = "document_search"
+    record.tool_call_count = 2
+    record.retrieved_chunk_count = 4
+    record.query = "private search query"
+    record.document_text = "private evidence"
+    payload = json.loads(JsonFormatter().format(record))
+    assert payload["agent_tool"] == "document_search"
+    assert payload["tool_call_count"] == 2
+    assert payload["retrieved_chunk_count"] == 4
+    assert "query" not in payload and "document_text" not in payload

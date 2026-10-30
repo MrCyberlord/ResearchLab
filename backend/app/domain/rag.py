@@ -63,6 +63,17 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class GroundedAnswer:
+    status: Literal["answered", "insufficient_evidence"]
+    answer: str | None
+    message: str | None
+    citations: list[Citation]
+    generation_ms: float
+    context_chunk_count: int
+    usage: TokenUsage | None
+
+
+@dataclass(frozen=True)
 class RagResult:
     status: Literal["answered", "insufficient_evidence"]
     answer: str | None

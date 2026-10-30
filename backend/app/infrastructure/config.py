@@ -59,11 +59,17 @@ class Settings(BaseSettings):
     llm_context_tokens: int = Field(default=8192, ge=2048, le=65536)
     llm_max_output_tokens: int = Field(default=512, ge=64, le=4096)
     llm_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
-    agent_graph_step_limit: int = Field(default=8, ge=4, le=20)
+    agent_graph_step_limit: int = Field(default=20, ge=8, le=40)
     agent_execution_timeout_seconds: float = Field(default=120, ge=1, le=600)
     agent_max_question_chars: int = Field(default=2000, ge=100, le=10000)
     agent_max_output_tokens: int = Field(default=384, ge=64, le=4096)
     agent_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    agent_max_tool_calls: int = Field(default=3, ge=1, le=5)
+    agent_tool_top_k: int = Field(default=5, ge=1, le=20)
+    agent_max_evidence_chunks: int = Field(default=12, ge=1, le=20)
+    agent_decision_context_bytes: int = Field(default=4000, ge=512, le=20000)
+    agent_max_context_bytes: int = Field(default=4000, ge=128, le=50000)
+    agent_max_prompt_bytes: int = Field(default=6000, ge=2048, le=64000)
 
     @model_validator(mode="after")
     def validate_chunk_config(self):
@@ -83,6 +89,12 @@ class Settings(BaseSettings):
             raise ValueError("Prompt bytes, output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
         if self.agent_max_output_tokens + 1024 > self.llm_context_tokens:
             raise ValueError("Agent output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
+        if self.agent_max_context_bytes > self.agent_max_prompt_bytes:
+            raise ValueError("AGENT_MAX_CONTEXT_BYTES must not exceed AGENT_MAX_PROMPT_BYTES")
+        if self.agent_max_prompt_bytes + self.agent_max_output_tokens + 1024 > self.llm_context_tokens:
+            raise ValueError("Agent prompt bytes, output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
+        if self.agent_graph_step_limit < self.agent_max_tool_calls * 3 + 3:
+            raise ValueError("AGENT_GRAPH_STEP_LIMIT is too small for AGENT_MAX_TOOL_CALLS")
         return self
 
     @field_validator("llm_base_url")

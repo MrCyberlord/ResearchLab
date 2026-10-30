@@ -5,23 +5,32 @@ from app.domain.documents import Chunk, Document, PageText
 from uuid import UUID
 
 from app.domain.models import RunSummary
-from app.domain.rag import LLMResult, RetrievedChunk
-from app.domain.agent import AgentGeneration
+from app.domain.rag import LLMResult, RetrievalResult, RetrievalStrategy, RetrievedChunk
+from app.domain.agent import AgentDecision, AgentGeneration
 
 
 class LLMProvider(Protocol):
     provider: str
     model: str
 
-    def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str]) -> LLMResult: ...
+    def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str],
+                 *, timeout_seconds: float | None = None) -> LLMResult: ...
 
 
 class AgentGenerationProvider(Protocol):
-    """Ungrounded text generation boundary used by the Agentic workflow only."""
+    """Tool decision and ungrounded generation boundary for Agentic execution."""
     provider: str
     model: str
 
-    def generate(self, system_prompt: str, user_prompt: str) -> AgentGeneration: ...
+    def decide(self, question: str, observations: list[dict], calls_remaining: int,
+               *, timeout_seconds: float | None = None) -> AgentDecision: ...
+    def generate(self, system_prompt: str, user_prompt: str,
+                 *, timeout_seconds: float | None = None) -> AgentGeneration: ...
+
+
+class DocumentSearchTool(Protocol):
+    def search(self, query: str, top_k: int, document_ids: list[UUID] | None,
+               strategy: RetrievalStrategy | None) -> RetrievalResult: ...
 
 
 class EmbeddingProvider(Protocol):

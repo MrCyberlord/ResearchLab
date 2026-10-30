@@ -1,6 +1,6 @@
 # ResearchLab
 
-A portfolio AI engineering workspace with independently testable RAG and Agentic modes. **Milestone 3A adds a bounded LangGraph agent foundation** alongside PDF ingestion, local retrieval, optional reranking and grounded RAG answers. The Agentic mode generates real local-model responses but has no document tools yet. Compare remains unimplemented. The default local workflow makes no paid API calls.
+A portfolio AI engineering workspace with independently testable RAG and Agentic modes. **Milestone 3B adds a bounded LangGraph document-research agent** alongside PDF ingestion, local retrieval, optional reranking and grounded RAG answers. The Agentic mode can choose zero or more document searches and returns validated citations for grounded answers. Compare remains unimplemented. The default local workflow makes no paid API calls.
 
 ## Requirements
 
@@ -73,7 +73,7 @@ compose.yaml          PostgreSQL 17 + pgvector with persistent volume
 
 This pragmatic modular monolith keeps operations simple and defines seams for independent future RAG and Agentic tests. The domain has no framework dependencies. FastAPI dependencies supply request-scoped SQLAlchemy sessions; future application services own transaction commits. Lifespan creates the engine/session factory and disposes the engine at shutdown. Connections are lazy. Settings can be injected directly for tests.
 
-Provider and repository protocols establish adapter contracts. Ingestion and retrieval share the configured embedding adapter/profile. RAG uses a citation-shaped LLM contract; Agentic uses a separate ungrounded generation contract so graph evolution cannot weaken citation enforcement. Both adapters reuse the same configured Ollama connection/model without coupling their application services. Compare is a presentation mode, not a third execution engine. No generic CRUD abstraction, service locator or microservices are introduced.
+Provider and repository protocols establish adapter contracts. Ingestion and retrieval share the configured embedding adapter/profile. Agentic decisions/direct answers use a separate structured provider contract, while RAG and Agentic grounded answers share one bounded evidence-assembly and citation-validation service. The document tool wraps `RetrievalService`; it cannot bypass embedding-profile checks, document filters or strategy behavior. Compare is a presentation mode, not a third execution engine. No generic CRUD abstraction, service locator or microservices are introduced.
 
 `GET /api/health` returns `{"status":"ok","service":"researchlab-api"}`. It is API liveness only, not database/provider readiness. The shell displays a real health request outcome, never simulated AI results. Hash-based navigation supports reloads and browser history without a routing dependency.
 
@@ -83,7 +83,7 @@ Alembic enables pgvector explicitly; startup never mutates schemas. The migratio
 
 ## Scope boundary
 
-Authentication, ANN indexes, Agentic document-search tools, tool loops, memory persistence, multi-agent orchestration, hybrid agent evaluation, dashboards and deployment remain outside Milestone 3A. Production hosting needs API routing and operational configuration. Review Milestone 3A before expanding scope.
+Authentication, ANN indexes, web/external tools, memory persistence, multi-agent orchestration, hybrid agent evaluation, dashboards and deployment remain outside Milestone 3B. Production hosting needs API routing and operational configuration. Review Milestone 3B before expanding scope.
 
 ## Milestone 1 verification (2026-10-21)
 
@@ -398,7 +398,7 @@ At K=5 all strategies had Recall 1.000, Precision 0.233 and Hit Rate 1.000; rera
 
 Milestone 2C-B adds no frontend dashboard, LangGraph, deployment or paid services. ANN search, more languages and larger held-out evaluation sets remain future work.
 
-## LangGraph Agentic foundation (Milestone 3A)
+## LangGraph Agentic foundation (Milestone 3A, historical)
 
 The Agentic tab now calls `POST /api/agent/questions`. A typed LangGraph `StateGraph` executes exactly one deterministic route and one configured LLM generation:
 
@@ -441,3 +441,75 @@ Remove-Item Env:RUN_AGENT_SMOKE
 6. Return to the RAG tab and repeat one known grounded question to confirm upload/retrieval/citation behavior is unchanged.
 
 Automated browser interaction was not performed for Milestone 3A. The frontend typecheck/build and API contract tests verify compilation and response handling; the visual and real-model flows above remain manual review items. Milestone 3A adds no database migration and does not change production documents or evaluation data.
+
+## Tool-using document research agent (Milestone 3B)
+
+Milestone 3B replaces the 3A keyword router with a real structured LLM decision at every decision node. The compiled typed graph is:
+
+```text
+START -> decide -- answer_direct ------> direct_response --------> finalize -> END
+                 -- search_documents --> document_search -> observe -> decide
+                 -- answer_grounded ---> grounded_response ------> finalize -> END
+                 -- insufficient ------> insufficient_evidence --> finalize -> END
+```
+
+The decision adapter first makes a strict, scope-only LLM decision: ordinary definitions and conceptual questions default to `general_knowledge`, while `document_research` requires an explicit request for uploaded/provided files, sources or citations. A general decision maps only to `answer_direct`. A document decision uses a separate discriminated action schema containing `search_documents`, `answer_grounded` and `insufficient_evidence`; only the search branch exposes required `query` and `top_k` fields. Invalid or extra fields are rejected rather than silently coerced. This separation prevents constrained local models from treating required tool fields or empty observations as evidence that every question needs search. The model receives bounded observations from prior searches, not a keyword-derived route. Once any document search has run, an ungrounded direct answer is rejected: the execution must produce a citation-validated grounded answer or explicitly report insufficient evidence.
+
+`document_search` is the only tool. Its narrow interface delegates to the existing `RetrievalService`, preserving semantic/hybrid/reranked strategy behavior, MiniLM profile compatibility, top-k validation and document filtering. Production composition creates the retrieval service lazily only when the tool is called, so a direct answer does not require a database query. The graph never calls SQLAlchemy repositories or embedding providers directly.
+
+Search calls are bounded by `AGENT_MAX_TOOL_CALLS` (default 3), and each model-selected `top_k` is capped by `AGENT_TOOL_TOP_K` (default 5). Repeated canonical queries are blocked regardless of `top_k`; case, spacing, Unicode presentation and punctuation differences do not create a new search. Evidence is deduplicated by persistent chunk ID and capped at `AGENT_MAX_EVIDENCE_CHUNKS` (default 12). Decision observations and final source context have independent UTF-8 byte bounds. The graph also has a 20-step recursion limit and a 120-second total deadline by default. Provider requests use the remaining deadline. A database call cannot be forcibly interrupted by Python after it has entered the driver, and disconnecting the browser does not cancel already-running local inference.
+
+Grounded generation uses the same `GroundedAnswerService` as the RAG application service. It bounds prompts, treats retrieved text as untrusted evidence, permits only supplied source labels, verifies each quoted substring against the supplied chunk and maps citations to the actual chunk ID, document UUID, filename, page and chunk order. Model-authored filenames/pages are never accepted. Empty or missing document results produce an explicit insufficient-evidence response; they are not converted into a general answer.
+
+`POST /api/agent/questions` accepts:
+
+```json
+{
+  "question": "What interval does the uploaded manual specify?",
+  "document_ids": null,
+  "strategy": "semantic",
+  "include_metadata": true
+}
+```
+
+`document_ids=null` permits the tool to search the whole corpus; a UUID list restricts every tool call to that set, while an empty list searches nothing. `strategy` may be `semantic`, `hybrid` or `hybrid_rerank`; omission uses the configured semantic default. Responses distinguish `direct`, `grounded` and `insufficient_evidence`. Grounded results include validated citations. Optional metadata includes node timings, safe tool query/activity summaries, tool-call count and aggregated provider usage when every provider call reports it. Logs contain node/tool names, timings, counts, route and outcome, but never questions, search queries, document content, filenames, quotes or provider response bodies.
+
+Errors remain structured: invalid request questions return 422; model-generated invalid tool arguments or invalid structured output return 502; embedding/storage/reranker/provider availability errors return 503; embedding-profile mismatch returns 409; and provider or total-execution timeouts return 504. The graph never retries, silently changes retrieval strategy, substitutes a mock response or falls back from a failed grounded answer to an ungrounded one.
+
+Run deterministic Agentic tests without external inference:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest `
+  backend/tests/test_agent_graph.py `
+  backend/tests/test_agent_llm.py `
+  backend/tests/test_agent_api.py
+```
+
+Run rollback-isolated PostgreSQL tool tests after migrations are current:
+
+```powershell
+$env:RUN_DB_TESTS='1'
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_agent_db.py
+Remove-Item Env:RUN_DB_TESTS
+```
+
+Opt into both real local Ollama paths only when the configured model is running. The grounded smoke test uses synthetic in-memory evidence and does not mutate PostgreSQL:
+
+```powershell
+$env:RUN_AGENT_SMOKE='1'
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_agent_smoke.py -m agent_smoke -s
+Remove-Item Env:RUN_AGENT_SMOKE
+```
+
+### Manual Milestone 3B verification
+
+1. Start PostgreSQL, apply migrations, start Ollama with the configured model, then run FastAPI and Vite.
+2. Open http://localhost:5173/#agentic. Confirm document scope and retrieval strategy controls appear, and the UI states that web tools and memory remain unavailable.
+3. Ask `What is an LLM?`. Confirm a `direct` response, zero document tool calls, no citations and a general-answer disclaimer.
+4. Select a known uploaded PDF and ask a question that requires it. Confirm at least one document-search activity, a `grounded` response and citations matching the PDF filename, page, chunk and verbatim supporting text.
+5. Ask about a fact absent from the selected document. Confirm an explicit insufficient-evidence response with no fabricated citation or claim of verification.
+6. Submit a question using each configured retrieval strategy and confirm the selected strategy remains within the chosen document scope.
+7. Stop Ollama and retry; confirm a structured provider error with no fallback answer. Restore Ollama afterward.
+8. Return to the RAG tab and repeat a known grounded question/upload workflow to verify unchanged RAG behavior.
+
+Milestone 3B adds no database migration and no new hosted/paid provider. Multiple LLM decisions plus final generation can be materially slower than RAG or the 3A direct path on CPU, and all calls share the total execution deadline. The model may choose suboptimal search queries or stop conservatively; hard tool/context limits prioritize safety and reproducibility over open-ended autonomy. No browser automation result is claimed until the manual checks above are performed.

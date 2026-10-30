@@ -70,7 +70,8 @@ class OllamaLLM:
         self.max_response_bytes = max_response_bytes
         self._transport = transport
 
-    def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str]) -> LLMResult:
+    def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str],
+                 *, timeout_seconds: float | None = None) -> LLMResult:
         if (not source_ids or len(source_ids) > 20
                 or any(not isinstance(item, str) or not item or len(item) > 80 for item in source_ids)
                 or len(set(source_ids)) != len(source_ids)):
@@ -86,10 +87,15 @@ class OllamaLLM:
             "options": {"temperature": 0, "num_ctx": self.context_tokens,
                         "num_predict": self.max_output_tokens},
         }
+        timeout = self.timeout_seconds if timeout_seconds is None else min(
+            self.timeout_seconds, timeout_seconds,
+        )
+        if timeout <= 0:
+            raise LLMTimeout("Ollama generation timed out. Try a smaller context or a faster local model.")
         started = perf_counter()
         data = bytearray()
         try:
-            with httpx.Client(timeout=httpx.Timeout(self.timeout_seconds, connect=min(5, self.timeout_seconds)),
+            with httpx.Client(timeout=httpx.Timeout(timeout, connect=min(5, timeout)),
                               trust_env=False, follow_redirects=False, transport=self._transport) as client:
                 with client.stream("POST", self.base_url + "/api/chat", json=request_body,
                                    headers={"Accept": "application/json", "Accept-Encoding": "identity"}) as response:
@@ -106,7 +112,7 @@ class OllamaLLM:
                         except ValueError:
                             raise LLMInvalidResponse("Ollama returned an invalid or oversized response.") from None
                     for chunk in response.iter_bytes(chunk_size=16384):
-                        if perf_counter() - started > self.timeout_seconds:
+                        if perf_counter() - started > timeout:
                             raise LLMTimeout("Ollama generation timed out. Try a smaller context or a faster local model.")
                         data.extend(chunk)
                         if len(data) > self.max_response_bytes:
