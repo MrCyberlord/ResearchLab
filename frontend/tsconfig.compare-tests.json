@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rootDir": "src",
+    "outDir": ".cache/compare-tests",
+    "sourceMap": false,
+    "declaration": false
+  },
+  "include": ["src/CompareContract.ts", "src/CompareQuestion.tsx"]
+}
