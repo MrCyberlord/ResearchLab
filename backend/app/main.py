@@ -9,6 +9,7 @@ from app.api.health import router
 from app.api.documents import router as document_router
 from app.api.upload_limits import UploadBodyLimit
 from app.api.rag import router as rag_router
+from app.api.agent import router as agent_router
 from app.infrastructure.config import Settings, get_settings
 from app.infrastructure.database import create_session_factory
 from app.infrastructure.logging import configure_logging
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(document_router)
     app.include_router(rag_router)
+    app.include_router(agent_router)
     return app
 
 

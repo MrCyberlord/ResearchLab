@@ -12,7 +12,8 @@ dependencies = [
   "psycopg[binary]>=3.2,<4", "alembic>=1.15,<2", "pgvector>=0.4,<1",
   "pypdf>=6,<7", "python-multipart>=0.0.20,<1", "psutil>=7,<8",
   "sentence-transformers>=5.1,<5.2", "transformers>=4.57.6,<5",
-  "huggingface-hub>=0.36,<1", "tokenizers>=0.22,<0.23"
+  "huggingface-hub>=0.36,<1", "tokenizers>=0.22,<0.23",
+  "langgraph==1.2.18"
 ]
 
 [project.optional-dependencies]
@@ -26,4 +27,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: requires migrated local PostgreSQL (RUN_DB_TESTS=1)", "semantic: real MiniLM weights (RUN_SEMANTIC_TESTS=1)", "reranker: real pinned cross-encoder weights (RUN_RERANKER_TESTS=1)", "llm_smoke: opt-in real local provider (RUN_LLM_SMOKE=1)"]
+markers = ["integration: requires migrated local PostgreSQL (RUN_DB_TESTS=1)", "semantic: real MiniLM weights (RUN_SEMANTIC_TESTS=1)", "reranker: real pinned cross-encoder weights (RUN_RERANKER_TESTS=1)", "llm_smoke: opt-in real local provider (RUN_LLM_SMOKE=1)", "agent_smoke: opt-in real local agent provider (RUN_AGENT_SMOKE=1)"]

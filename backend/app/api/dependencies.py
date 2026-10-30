@@ -12,6 +12,9 @@ from app.application.rag import RagService
 from app.infrastructure.retrieval_repository import SQLAlchemyRetrievalRepository
 from app.infrastructure.llm import create_llm_provider
 from app.infrastructure.reranker import create_reranker_provider
+from app.application.agent import AgentService
+from app.application.agent_graph import AgentGraph
+from app.infrastructure.agent_llm import create_agent_generation_provider
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -52,3 +55,10 @@ def get_rag_service(request: Request, retrieval: RetrievalService = Depends(get_
     settings = request.app.state.settings
     return RagService(retrieval, create_llm_provider(settings),
                       settings.rag_max_context_bytes, settings.rag_max_prompt_bytes)
+
+
+def get_agent_service(request: Request) -> AgentService:
+    settings = request.app.state.settings
+    graph = AgentGraph(create_agent_generation_provider(settings))
+    return AgentService(graph, settings.agent_max_question_chars,
+                        settings.agent_graph_step_limit)

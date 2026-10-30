@@ -6,6 +6,7 @@ from uuid import UUID
 
 from app.domain.models import RunSummary
 from app.domain.rag import LLMResult, RetrievedChunk
+from app.domain.agent import AgentGeneration
 
 
 class LLMProvider(Protocol):
@@ -13,6 +14,14 @@ class LLMProvider(Protocol):
     model: str
 
     def generate(self, system_prompt: str, user_prompt: str, source_ids: list[str]) -> LLMResult: ...
+
+
+class AgentGenerationProvider(Protocol):
+    """Ungrounded text generation boundary used by the Agentic workflow only."""
+    provider: str
+    model: str
+
+    def generate(self, system_prompt: str, user_prompt: str) -> AgentGeneration: ...
 
 
 class EmbeddingProvider(Protocol):

@@ -1,6 +1,6 @@
 # ResearchLab
 
-A portfolio AI engineering workspace for RAG and future Agentic execution. **Milestone 2B: semantic retrieval and grounded question answering.** PDF upload, local MiniLM embeddings, document-filtered retrieval and cited answers are available. Agentic workflows and Compare results remain unimplemented. The default local workflow makes no paid API calls.
+A portfolio AI engineering workspace with independently testable RAG and Agentic modes. **Milestone 3A adds a bounded LangGraph agent foundation** alongside PDF ingestion, local retrieval, optional reranking and grounded RAG answers. The Agentic mode generates real local-model responses but has no document tools yet. Compare remains unimplemented. The default local workflow makes no paid API calls.
 
 ## Requirements
 
@@ -60,20 +60,20 @@ Expect a `vector` row and revision `0004_keyword_search`. For offline migration 
 backend/
   app/
     api/              HTTP routes and request-scoped session dependency
-    application/      Ingestion, retrieval and RAG services; adapter/repository protocols
-    domain/           Framework-independent document, retrieval, answer and citation types
-    infrastructure/   PDF worker, MiniLM, Ollama, PostgreSQL repositories and settings/logging
+    application/      Ingestion, retrieval, RAG and bounded LangGraph orchestration/services
+    domain/           Framework-independent document, RAG and Agentic contracts
+    infrastructure/   PDF, local models, separate RAG/Agent Ollama adapters and PostgreSQL
     main.py           Application factory and dependency composition
   migrations/         Alembic environment and versioned migration
   tests/              Unit/API, PostgreSQL, semantic and opt-in real-provider tests
 frontend/
-  src/                Upload, document selection, RAG questions, citations and API status
+  src/                RAG and Agentic workspaces, real API states and execution trace display
 compose.yaml          PostgreSQL 17 + pgvector with persistent volume
 ```
 
 This pragmatic modular monolith keeps operations simple and defines seams for independent future RAG and Agentic tests. The domain has no framework dependencies. FastAPI dependencies supply request-scoped SQLAlchemy sessions; future application services own transaction commits. Lifespan creates the engine/session factory and disposes the engine at shutdown. Connections are lazy. Settings can be injected directly for tests.
 
-Provider and repository protocols establish adapter contracts. Ingestion and retrieval share the configured embedding adapter/profile. RAG uses a provider-agnostic LLM contract with a real Ollama adapter; Agentic execution remains deferred. Compare is a presentation mode, not a third execution engine. No LangGraph, generic CRUD abstraction, service locator or microservices are introduced.
+Provider and repository protocols establish adapter contracts. Ingestion and retrieval share the configured embedding adapter/profile. RAG uses a citation-shaped LLM contract; Agentic uses a separate ungrounded generation contract so graph evolution cannot weaken citation enforcement. Both adapters reuse the same configured Ollama connection/model without coupling their application services. Compare is a presentation mode, not a third execution engine. No generic CRUD abstraction, service locator or microservices are introduced.
 
 `GET /api/health` returns `{"status":"ok","service":"researchlab-api"}`. It is API liveness only, not database/provider readiness. The shell displays a real health request outcome, never simulated AI results. Hash-based navigation supports reloads and browser history without a routing dependency.
 
@@ -83,7 +83,7 @@ Alembic enables pgvector explicitly; startup never mutates schemas. The migratio
 
 ## Scope boundary
 
-Authentication, hybrid search, reranking, ANN indexes, agent tools, evaluation dashboards, LangGraph and deployment remain outside this milestone. Production hosting needs API routing and operational configuration. Review Milestone 2B before expanding scope.
+Authentication, ANN indexes, Agentic document-search tools, tool loops, memory persistence, multi-agent orchestration, hybrid agent evaluation, dashboards and deployment remain outside Milestone 3A. Production hosting needs API routing and operational configuration. Review Milestone 3A before expanding scope.
 
 ## Milestone 1 verification (2026-10-21)
 
@@ -397,3 +397,47 @@ The real local comparison used the unchanged eight-question CC0 dataset, pinned 
 At K=5 all strategies had Recall 1.000, Precision 0.233 and Hit Rate 1.000; reranking retained MRR 1.000 versus 0.917 for the other strategies. Plain hybrid produced no quality improvement on this dataset and added 3.84 ms p50 latency. Reranking improved first-result ordering but added 65.09 ms p50 and 111.94 ms p95 over semantic. This is evidence for keeping semantic as the default: the observed reranker gain is promising, but eight synthetic questions are too small to establish general improvement, and the latency trade-off is material. No claim is made about production-domain quality, multilingual search or factual answer faithfulness.
 
 Milestone 2C-B adds no frontend dashboard, LangGraph, deployment or paid services. ANN search, more languages and larger held-out evaluation sets remain future work.
+
+## LangGraph Agentic foundation (Milestone 3A)
+
+The Agentic tab now calls `POST /api/agent/questions`. A typed LangGraph `StateGraph` executes exactly one deterministic route and one configured LLM generation:
+
+```text
+START -> route -> direct_response ------------------------> finalize -> END
+                 document_tools_unavailable_response ---->
+```
+
+The conservative router sends explicit requests about uploaded/selected PDFs or files to the limitation-aware branch; other questions use the direct branch. Both branches call the real Agentic generation adapter once. The document branch still generates a useful response, but its system instructions require an explicit limitation and prohibit claims of file inspection, grounding, quotes or citations. This is orchestration, not a document-research agent. It has no tools, browsing, conversation memory, checkpointer, retry/fallback loop or multi-agent behavior.
+
+LangGraph is pinned to `1.2.18`. Only its in-process graph API is used: ResearchLab does not configure LangSmith tracing, a remote graph service or persistent graph state. Graph orchestration lives in `application/agent_graph.py`; request validation and result assembly live in `application/agent.py`; the provider protocol is in `application/ports.py`; native Ollama transport is isolated in `infrastructure/agent_llm.py`. The existing RAG adapter and its citation schema are unchanged.
+
+`GET /api/agent/config` reports the effective provider/model and public execution limits. `POST /api/agent/questions` accepts `question` and optional `include_metadata` (default true). Responses always set `document_tools_available=false` and include a non-grounding disclaimer. Metadata contains the chosen route, total duration, node names/durations/outcomes and token counts when Ollama returns them. Setting `include_metadata=false` omits metadata from the response but does not disable safe internal timing. Logs include only event names, route, node, outcome, timing and step count; questions and model responses are not logged.
+
+The graph defaults to eight maximum steps although a successful run uses three nodes. The adapter makes one request with a 120-second timeout, 384-token output limit and 65,536-byte response limit. These are execution bounds, not cancellation of model computation after a client disconnect. The synchronous FastAPI endpoint relies on its worker thread while local generation runs. There is no server-wide concurrency limit or authentication yet, so production exposure is out of scope.
+
+The Agentic adapter uses the same `LLM_BASE_URL`, `LLM_MODEL` and `LLM_CONTEXT_TOKENS` as RAG, plus the `AGENT_*` settings in `.env.example`. It never pulls a model, calls a paid service, accepts credentials in the URL or silently substitutes a mock/fallback. Start Ollama and explicitly install the configured model as described in Milestone 2B.
+
+Run deterministic tests (all external generation mocked):
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_agent_graph.py backend/tests/test_agent_llm.py backend/tests/test_agent_api.py
+```
+
+The opt-in smoke test executes the compiled graph against the configured real Ollama model and consumes local compute:
+
+```powershell
+$env:RUN_AGENT_SMOKE='1'
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_agent_smoke.py -m agent_smoke -s
+Remove-Item Env:RUN_AGENT_SMOKE
+```
+
+### Manual Agentic verification
+
+1. Start Ollama with the configured model, then FastAPI and Vite using the setup commands above.
+2. Open http://localhost:5173/#agentic and confirm the UI clearly states that document tools, citations and memory are unavailable.
+3. Ask `In one sentence, what is a vector embedding?`; confirm a real answer appears with route `direct` and the three-node trace.
+4. Ask `Summarize my uploaded PDF`; confirm route `document_tools_unavailable` and that the response does not claim it read the file or provide citations.
+5. Stop Ollama (or temporarily select a nonexistent model), submit again and confirm a provider error appears with no fabricated response. Restore the configuration afterward.
+6. Return to the RAG tab and repeat one known grounded question to confirm upload/retrieval/citation behavior is unchanged.
+
+Automated browser interaction was not performed for Milestone 3A. The frontend typecheck/build and API contract tests verify compilation and response handling; the visual and real-model flows above remain manual review items. Milestone 3A adds no database migration and does not change production documents or evaluation data.

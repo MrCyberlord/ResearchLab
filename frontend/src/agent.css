@@ -1,0 +1,29 @@
+.agent-panel{margin-top:24px;padding:28px;border:1px solid #dae1e7;border-radius:10px;background:#fff}
+.agent-panel-heading{display:flex;justify-content:space-between;gap:20px}
+.agent-panel h2{margin:0 0 12px;font-size:20px}
+.agent-panel p{font-size:13px;line-height:1.7;color:#627185}
+.agent-limitation{margin:18px 0;padding:14px 16px;border:1px solid #e7dfcb;border-radius:6px;background:#faf7f0;color:#685d43;font-size:12px;line-height:1.7}
+.agent-panel .provider-label{font-size:11px;color:#617a70}
+.agent-panel form>label{display:block;font-size:12px;font-weight:600;margin:20px 0 9px}
+.agent-panel textarea{display:block;resize:vertical;min-height:110px;width:100%;padding:12px;border:1px solid #ccd9d3;border-radius:6px;background:#fff;color:#1c2b3d;font:inherit;font-size:13px;line-height:1.7}
+.agent-panel textarea::placeholder{color:#88988f}
+.agent-panel :focus-visible{outline:3px solid #45c4aa;outline-offset:3px}
+.agent-actions{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:14px}
+.agent-actions span{font-size:10px;color:#849189}
+.agent-panel button{padding:12px 18px;border:0;border-radius:6px;background:#246c59;color:#fff;font:inherit;font-size:12px;cursor:pointer}
+.agent-panel button:disabled{opacity:.6;cursor:not-allowed}
+.agent-panel .text-button{padding:0;background:none;color:#246c59;text-decoration:underline}
+.agent-panel .agent-error{color:#9d2830}
+.agent-result{margin-top:25px;padding-top:20px;border-top:1px solid #e0e7e3}
+.agent-result h3{font-size:15px;margin:0 0 14px}
+.agent-answer{font-size:14px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-disclaimer{padding:12px 14px;border-left:3px solid #d3b568;background:#faf8f2}
+.agent-trace{margin-top:18px;padding:14px;border:1px solid #dbe5df;border-radius:7px;background:#f9fcfa}
+.agent-trace summary{font-size:11px;color:#355e50;cursor:pointer}
+.agent-trace ol{padding-left:25px;margin:14px 0}
+.agent-trace li{padding:5px 0;font-size:11px}
+.agent-trace li span{margin-left:12px;color:#728078}
+.agent-trace p,.agent-provider{font-size:10px!important;overflow-wrap:anywhere}
+.agent-trace code{font-size:10px}
+.agent-provider{color:#829188!important}
+@media(max-width:720px){.agent-panel{padding:20px}.agent-actions{align-items:stretch;flex-direction:column}.agent-actions button{width:100%}.agent-trace li span{display:block;margin:4px 0 0}}

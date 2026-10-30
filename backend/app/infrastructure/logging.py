@@ -10,7 +10,8 @@ class JsonFormatter(logging.Formatter):
                    "event": record.getMessage()}
         for key in ("method", "status_code", "duration_ms", "retrieval_ms", "generation_ms",
                     "rerank_ms", "retrieval_strategy", "semantic_candidate_count", "keyword_candidate_count",
-                    "retrieved_chunk_count", "context_chunk_count", "prompt_tokens", "completion_tokens", "outcome"):
+                    "retrieved_chunk_count", "context_chunk_count", "prompt_tokens", "completion_tokens", "outcome",
+                    "agent_route", "agent_node", "agent_step_count"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         if record.exc_info:

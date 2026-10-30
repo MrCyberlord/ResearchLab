@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     llm_context_tokens: int = Field(default=8192, ge=2048, le=65536)
     llm_max_output_tokens: int = Field(default=512, ge=64, le=4096)
     llm_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    agent_graph_step_limit: int = Field(default=8, ge=4, le=20)
+    agent_execution_timeout_seconds: float = Field(default=120, ge=1, le=600)
+    agent_max_question_chars: int = Field(default=2000, ge=100, le=10000)
+    agent_max_output_tokens: int = Field(default=384, ge=64, le=4096)
+    agent_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
 
     @model_validator(mode="after")
     def validate_chunk_config(self):
@@ -76,6 +81,8 @@ class Settings(BaseSettings):
             raise ValueError("RAG_MAX_CONTEXT_BYTES must not exceed RAG_MAX_PROMPT_BYTES")
         if self.rag_max_prompt_bytes + self.llm_max_output_tokens + 1024 > self.llm_context_tokens:
             raise ValueError("Prompt bytes, output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
+        if self.agent_max_output_tokens + 1024 > self.llm_context_tokens:
+            raise ValueError("Agent output tokens and safety margin exceed LLM_CONTEXT_TOKENS")
         return self
 
     @field_validator("llm_base_url")
