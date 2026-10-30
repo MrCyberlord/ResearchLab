@@ -243,6 +243,62 @@ def test_citation_quote_comparison_accepts_equivalent_whitespace():
     assert result.citations[0].page_number == 2
 
 
+def test_invalid_quote_gets_one_strict_deadline_bounded_regeneration():
+    class RepairingLLM:
+        provider = "test-provider"
+        model = "test-model"
+
+        def __init__(self):
+            self.calls = []
+
+        def generate(self, system_prompt, user_prompt, source_ids, *, timeout_seconds=None):
+            self.calls.append((system_prompt, timeout_seconds))
+            if len(self.calls) == 1:
+                return LLMResult(
+                    answer="Shutters close after sunset [S1].",
+                    evidence=[SourceReference(
+                        "S1", "the shutters close automatically after sunset."
+                    )],
+                    insufficient_evidence=False,
+                    usage=TokenUsage(prompt_tokens=10, completion_tokens=4),
+                )
+            return LLMResult(
+                answer="Shutters close after sunset [S1].",
+                evidence=[SourceReference(
+                    "S1", "The shutters close automatically after sunset."
+                )],
+                insufficient_evidence=False,
+                usage=TokenUsage(prompt_tokens=12, completion_tokens=5),
+            )
+
+    llm = RepairingLLM()
+    result = rag([
+        chunk("The shutters close automatically after sunset.")
+    ], llm).grounding.answer(
+        "What happens after sunset?",
+        [chunk("The shutters close automatically after sunset.")],
+        timeout_seconds=2,
+    )
+    assert result.status == "answered"
+    assert result.citations[0].quote.startswith("The shutters")
+    assert len(llm.calls) == 2
+    assert "character-for-character" in llm.calls[1][0]
+    assert 0 < llm.calls[1][1] <= llm.calls[0][1] <= 2
+    assert result.usage.prompt_tokens == 22
+    assert result.usage.completion_tokens == 9
+
+
+def test_invalid_quote_regeneration_is_bounded_to_one_retry():
+    llm = RecordingLLM(LLMResult(
+        answer="Three years [S1].",
+        evidence=[SourceReference("S1", "a fabricated quote")],
+        insufficient_evidence=False,
+    ))
+    with pytest.raises(LLMInvalidResponse):
+        rag([chunk()], llm).answer("Warranty?")
+    assert len(llm.calls) == 2
+
+
 @pytest.mark.parametrize("failure", [LLMUnavailable(), LLMTimeout(), LLMInvalidResponse()])
 def test_provider_failures_propagate_without_a_fake_answer(failure):
     llm = RecordingLLM(failure=failure)

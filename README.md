@@ -1,6 +1,6 @@
 # ResearchLab
 
-A portfolio AI engineering workspace with independently testable RAG and Agentic modes. **Milestone 3B adds a bounded LangGraph document-research agent** alongside PDF ingestion, local retrieval, optional reranking and grounded RAG answers. The Agentic mode can choose zero or more document searches and returns validated citations for grounded answers. Compare remains unimplemented. The default local workflow makes no paid API calls.
+A portfolio AI engineering workspace with independently testable RAG and Agentic modes. **Milestone 3C-A adds a reproducible, rollback-isolated evaluation baseline for the bounded LangGraph document-research agent** alongside PDF ingestion, local retrieval, optional reranking and grounded RAG answers. The Agentic mode can choose zero or more document searches and returns validated citations for grounded answers. Compare remains unimplemented. The default local workflow makes no paid API calls.
 
 ## Requirements
 
@@ -62,6 +62,7 @@ backend/
     api/              HTTP routes and request-scoped session dependency
     application/      Ingestion, retrieval, RAG and bounded LangGraph orchestration/services
     domain/           Framework-independent document, RAG and Agentic contracts
+    evaluation/       Offline RAG and Agentic datasets, metrics, runners and CLIs
     infrastructure/   PDF, local models, separate RAG/Agent Ollama adapters and PostgreSQL
     main.py           Application factory and dependency composition
   migrations/         Alembic environment and versioned migration
@@ -83,7 +84,7 @@ Alembic enables pgvector explicitly; startup never mutates schemas. The migratio
 
 ## Scope boundary
 
-Authentication, ANN indexes, web/external tools, memory persistence, multi-agent orchestration, hybrid agent evaluation, dashboards and deployment remain outside Milestone 3B. Production hosting needs API routing and operational configuration. Review Milestone 3B before expanding scope.
+Authentication, ANN indexes, web/external tools, memory persistence, multi-agent orchestration, evaluation dashboards and deployment remain outside Milestone 3C-A. Production hosting needs API routing and operational configuration. Review the measured baseline before changing routing or prompts.
 
 ## Milestone 1 verification (2026-10-21)
 
@@ -238,13 +239,15 @@ There is no new schema migration for Milestone 2B: the existing `vector(384)` st
 
 RAG validates the question, embeds it, retrieves eligible chunks and assembles a bounded source prompt. Defaults allow 4,000 UTF-8 bytes of source text and 6,000 bytes for the combined system/question/source prompt. Chunks may be truncated at UTF-8 boundaries to fit. Ollama receives an 8,192-token context setting and a 512-token output cap; settings reserve a further 1,024-token margin and reject incompatible byte/token budget combinations. Byte bounds are conservative controls, not exact model-tokenizer counts.
 
-The model receives source labels and text as untrusted data, with instructions to ignore embedded commands, use no outside knowledge, and acknowledge insufficient context. Structured generation must return an answer, source references with supporting quotes and an `insufficient_evidence` flag. The service validates source labels against only the chunks actually sent and verifies each quote by NFKC/whitespace-normalized substring matching against its supplied source excerpt. Quote formatting does not need byte-for-byte equality; factual entailment is not mechanically verified. Document UUID, filename, page number, chunk ID/order and supporting text come from database records, never from model-invented metadata. `[S1]` labels are local to that response; the UI links them to the displayed source details.
+The model receives source labels and text as untrusted data, with instructions to ignore embedded commands, use no outside knowledge, and acknowledge insufficient context. Structured generation uses a strict discriminated schema: `status=answered` requires a nonempty answer and evidence list, while `status=insufficient_evidence` permits neither field. The service validates source labels against only the chunks actually sent and verifies each quote by NFKC/whitespace-normalized, case-sensitive substring matching against its supplied source excerpt. Whitespace may be normalized, but capitalization and punctuation are not silently repaired. Document UUID, filename, page number, chunk ID/order and supporting text come from database records, never from model-invented metadata. `[S1]` labels are local to that response; the UI links them to the displayed source details.
 
 An answered response has `status="answered"`, nonempty `answer` and citations containing `source_id`, `chunk_id`, `document_id`, `filename`, `page_number`, `chunk_order`, `quote` and the bounded supporting `text`. When retrieval is empty, generation is skipped. Empty retrieval or a model-declared inability returns `status="insufficient_evidence"`, `answer=null`, an explanatory `message` and no citations. A provider response that claims an answer without supporting citations is rejected with 502. Unsupported labels, unverifiable quotes or malformed/truncated provider output are rejected rather than replaced with a fabricated answer.
 
 These checks establish source identity and quote presence; they do not prove that every generated claim logically follows from its quote or make the model immune to prompt injection. Review source passages before relying on an answer. There is no reranker, entailment verifier or evaluation dashboard in this milestone.
 
-Validation failures return 422, oversized requests 413 and incompatible profiles 409. Embedding/storage/provider unavailability returns 503; provider timeout returns 504; invalid, oversized, compressed, truncated or unsupported provider responses return 502. The Ollama adapter uses `LLM_TIMEOUT_SECONDS` (default 120), a five-second-or-smaller connect timeout, and `LLM_MAX_RESPONSE_BYTES` (default 65,536). It disables environment proxies and redirects. It does not retry generation or silently switch models/providers.
+Validation failures return 422, oversized requests 413 and incompatible profiles 409. Embedding/storage/provider unavailability returns 503; provider timeout returns 504; invalid, oversized, compressed, truncated or unsupported provider responses return 502. The shared Ollama transport wraps the complete HTTP exchange in an absolute client-side wall deadline: `LLM_TIMEOUT_SECONDS` defaults to 120 seconds, each graph call receives the smaller remaining execution budget, connection setup is capped at five seconds, and responses are capped by `LLM_MAX_RESPONSE_BYTES` (default 65,536). It disables environment proxies and redirects. `LLM_CONNECT_RETRIES` defaults to one and applies only to a failed TCP connection before a response; read/write timeouts, HTTP errors and completed inference are not transport-retried. A parsed grounded response that fails strict evidence validation may be regenerated once with an exact-copy instruction, within the original deadline. There is no permissive parsing, fabricated citation, model fallback or silent provider switch.
+
+The absolute deadline cancels ResearchLab's async HTTP coroutine and closes the client connection; it does not prove that the separate Ollama process stopped model computation. Ollama may continue work after a disconnect, and Python cannot forcibly terminate that server-side operation. A process or machine suspended by the operating system can also observe the deadline only after it is scheduled again. Database calls and local embedding calls remain synchronous boundaries and cannot be forcibly interrupted once inside their native driver/runtime.
 
 Responses and JSON logs expose retrieval/generation latency, retrieved/context chunk counts and prompt/completion token usage when Ollama supplies it. Missing usage remains null. Logs contain event names, timings, counts and outcomes; they do not log questions, document text, quotes, filenames, API keys or provider response bodies. Answers are returned to the caller without storing a conversation history.
 
@@ -457,7 +460,7 @@ The decision adapter first makes a strict, scope-only LLM decision: ordinary def
 
 `document_search` is the only tool. Its narrow interface delegates to the existing `RetrievalService`, preserving semantic/hybrid/reranked strategy behavior, MiniLM profile compatibility, top-k validation and document filtering. Production composition creates the retrieval service lazily only when the tool is called, so a direct answer does not require a database query. The graph never calls SQLAlchemy repositories or embedding providers directly.
 
-Search calls are bounded by `AGENT_MAX_TOOL_CALLS` (default 3), and each model-selected `top_k` is capped by `AGENT_TOOL_TOP_K` (default 5). Repeated canonical queries are blocked regardless of `top_k`; case, spacing, Unicode presentation and punctuation differences do not create a new search. Evidence is deduplicated by persistent chunk ID and capped at `AGENT_MAX_EVIDENCE_CHUNKS` (default 12). Decision observations and final source context have independent UTF-8 byte bounds. The graph also has a 20-step recursion limit and a 120-second total deadline by default. Provider requests use the remaining deadline. A database call cannot be forcibly interrupted by Python after it has entered the driver, and disconnecting the browser does not cancel already-running local inference.
+Search calls are bounded by `AGENT_MAX_TOOL_CALLS` (default 3), and each model-selected `top_k` is capped by `AGENT_TOOL_TOP_K` (default 5). Repeated canonical queries are blocked regardless of `top_k`; case, spacing, Unicode presentation and punctuation differences do not create a new search. Evidence is deduplicated by persistent chunk ID and capped at `AGENT_MAX_EVIDENCE_CHUNKS` (default 12). Decision observations and final source context have independent UTF-8 byte bounds. The graph also has a 20-step recursion limit and computes a 120-second total deadline by default; each provider request receives the remaining duration, and the shared HTTP transport now enforces that duration across connection, response-header wait and body read. This is a client deadline, not forcible cancellation of Ollama computation or a synchronous database/embedding operation.
 
 Grounded generation uses the same `GroundedAnswerService` as the RAG application service. It bounds prompts, treats retrieved text as untrusted evidence, permits only supplied source labels, verifies each quoted substring against the supplied chunk and maps citations to the actual chunk ID, document UUID, filename, page and chunk order. Model-authored filenames/pages are never accepted. Empty or missing document results produce an explicit insufficient-evidence response; they are not converted into a general answer.
 
@@ -474,7 +477,7 @@ Grounded generation uses the same `GroundedAnswerService` as the RAG application
 
 `document_ids=null` permits the tool to search the whole corpus; a UUID list restricts every tool call to that set, while an empty list searches nothing. `strategy` may be `semantic`, `hybrid` or `hybrid_rerank`; omission uses the configured semantic default. Responses distinguish `direct`, `grounded` and `insufficient_evidence`. Grounded results include validated citations. Optional metadata includes node timings, safe tool query/activity summaries, tool-call count and aggregated provider usage when every provider call reports it. Logs contain node/tool names, timings, counts, route and outcome, but never questions, search queries, document content, filenames, quotes or provider response bodies.
 
-Errors remain structured: invalid request questions return 422; model-generated invalid tool arguments or invalid structured output return 502; embedding/storage/reranker/provider availability errors return 503; embedding-profile mismatch returns 409; and provider or total-execution timeouts return 504. The graph never retries, silently changes retrieval strategy, substitutes a mock response or falls back from a failed grounded answer to an ungrounded one.
+Errors remain structured: invalid request questions return 422; model-generated invalid tool arguments or invalid structured output return 502; embedding/storage/reranker/provider availability errors return 503; embedding-profile mismatch returns 409; and provider or total-execution timeouts return 504. The graph never retries routing/tool decisions, silently changes retrieval strategy, substitutes a mock response or falls back from a failed grounded answer to an ungrounded one. Only the bounded transport connection retry and one strict grounded-validation regeneration described above are permitted.
 
 Run deterministic Agentic tests without external inference:
 
@@ -513,3 +516,75 @@ Remove-Item Env:RUN_AGENT_SMOKE
 8. Return to the RAG tab and repeat a known grounded question/upload workflow to verify unchanged RAG behavior.
 
 Milestone 3B adds no database migration and no new hosted/paid provider. Multiple LLM decisions plus final generation can be materially slower than RAG or the 3A direct path on CPU, and all calls share the total execution deadline. The model may choose suboptimal search queries or stop conservatively; hard tool/context limits prioritize safety and reproducibility over open-ended autonomy. No browser automation result is claimed until the manual checks above are performed.
+
+## Reproducible Agentic evaluation baseline (Milestone 3C-A)
+
+Milestone 3C-A evaluates the unchanged Milestone 3B `AgentService` and compiled LangGraph. It adds no API route, frontend dashboard, migration or production routing override. The CC0 dataset under `backend/evaluation/agent/datasets/v1/` contains three fictional documents and ten explicitly labelled questions: general knowledge, explicit document research, unanswerable document requests, paraphrases, ambiguous requests and a request that attempts to induce a repeated empty search. Labels define expected scope, terminal status, tool use, document filters and exact supporting document/page/chunk references.
+
+The evaluator reuses the RAG evaluator's PostgreSQL isolation manager. Every run seeds deterministic document IDs into a randomly named transaction-scoped schema, executes the real agent against that schema, rolls the transaction back and compares qualified `public.documents`/`public.chunks` counts before and after. It never uploads fixtures to the production corpus, truncates tables, resets a database or deletes volumes.
+
+Run deterministic metrics, failure-injection and graph-boundary tests without Ollama:
+
+```powershell
+$agentEvalCache = New-Item -ItemType Directory -Force .cache
+$agentEvalTemp = Join-Path $agentEvalCache.FullName ("pytest-agent-eval-" + [guid]::NewGuid().ToString("N"))
+.\.venv\Scripts\python.exe -m pytest `
+  backend/tests/test_agent_evaluation.py `
+  backend/tests/test_agent_graph.py `
+  backend/tests/test_agent_llm.py `
+  --basetemp=$agentEvalTemp -p no:cacheprovider
+```
+
+Run the rollback-isolation test against PostgreSQL on port 5433:
+
+```powershell
+$env:RUN_DB_TESTS='1'
+$agentEvalCache = New-Item -ItemType Directory -Force .cache
+$agentEvalDbTemp = Join-Path $agentEvalCache.FullName ("pytest-agent-eval-db-" + [guid]::NewGuid().ToString("N"))
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_agent_evaluation_db.py `
+  --basetemp=$agentEvalDbTemp -p no:cacheprovider
+Remove-Item Env:RUN_DB_TESTS
+```
+
+The failure matrix is deliberately split at existing boundaries: `test_agent_evaluation.py` verifies that malformed-provider, timeout and execution-limit failures remain visible and score as failures; `test_agent_llm.py` rejects malformed strict structured output; and `test_agent_graph.py` exercises empty retrieval, repeated calls with changed `top_k`, provider timeouts and graph-limit exhaustion. These tests use deterministic fakes and are separate from measured Ollama variability.
+
+Run the configured real Ollama model from `backend`. `--repeats` accepts 1-20 and measures variability using the documented `scope|status|tool_used|tool_call_count|error_type` signature. Two repeats are the checked-in baseline configuration and can take many minutes on CPU:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -m app.evaluation.agent_cli `
+  --repeats 2 `
+  --strategy semantic `
+  --run-id local-agent-check `
+  --output ..\.cache\evaluations\agent-latest.json `
+  --report ..\.cache\evaluations\agent-latest.md `
+  --fail-on-regression
+Set-Location ..
+```
+
+For a CPU-conscious investigation, repeat `--question-id` to run only named cases. The JSON records the selected IDs and total dataset size, and the result is intentionally incompatible with the full baseline comparator:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -m app.evaluation.agent_cli `
+  --question-id d01_seedling_protection `
+  --question-id d02_seedling_paraphrase `
+  --repeats 1 `
+  --output ..\.cache\evaluations\agent-reliability.json `
+  --report ..\.cache\evaluations\agent-reliability.md
+Set-Location ..
+```
+
+An editable install also exposes `researchlab-agent-eval`. The default comparator is `backend/evaluation/agent/baselines/gemma3-4b-v1.json`; comparison requires the same dataset checksum, selected question set, repeat count, provider/model, scope/document/grounding prompt and schema versions, retrieval strategy and embedding profile. Accuracy decreases are flagged, but local latency is recorded rather than used as a regression gate. JSON contains all labelled attempts, errors, safe tool activity, node outcomes, model/prompt/schema identity, token totals when available, production counts and a local CPU/memory snapshot. Markdown is a concise review report. Default local outputs are under ignored `.cache/evaluations/`.
+
+Metric denominators are explicit in both formats. Tool-selection accuracy, document-scope compliance, expected-status accuracy and abstention accuracy use every attempted run; provider or execution errors count as incorrect instead of disappearing. Grounded-answer rate uses only runs labelled `grounded`, and unanswerable abstention rate uses only runs labelled `insufficient_evidence`. Citation validity divides returned citations that match an expected document/page/chunk and contain a verbatim source quote by all returned citations. Citation coverage divides matched expected references by all expected references across grounded-labelled runs. Tool calls and graph steps describe completed runs. End-to-end latency p50/p95 uses nearest-rank percentiles over all attempts.
+
+The preserved pre-fix `ollama/gemma3:4b` baseline used temperature 0, semantic retrieval, MiniLM and 10 questions x 2 repeats. Tool-selection and scope-compliance accuracy were 0.85; expected-status and abstention accuracy were 0.75; grounded-answer rate was 0.375; unanswerable abstention was 1.0. The three returned citations had 1.0 mechanical validity/reference precision, while citation coverage was 0.375 over eight expected references. End-to-end latency was p50 19.44 s and p95 40.65 s. One question varied across repeats. Three attempts errored: one anomalous `AgentLLMTimeout` after approximately 1,203.65 s despite the configured 120-second limit, and two strict grounded-response `LLMInvalidResponse` failures. These failures remain unchanged in `gemma3-4b-v1.json` as the before record.
+
+The separate post-fix reliability run `gemma3-4b-v1-reliability-after.json` intentionally evaluated only `d01_seedling_protection` and `d02_seedling_paraphrase`, once each, on the same versioned dataset and isolated PostgreSQL infrastructure. Both completed as grounded responses with valid expected citations; error count and configured-timeout-overrun count were zero. Latencies were 43.80 s and 46.92 s (two-sample p50/p95 43.80/46.92 s). Production counts remained `1 document / 3 chunks` before and after. This two-case run verifies the historical failure paths; it is not a replacement full baseline, a general quality improvement claim or a statistically meaningful latency comparison. Its comparator is correctly marked incompatible because the question selection and grounding prompt/schema versions changed. The run used CPU inference on an Intel Core Ultra 7 255U (12 cores/14 logical processors) with 15.5 GiB visible RAM and only about 1.5 GiB free at the measurement point; memory pressure and other local load materially limit latency interpretation.
+
+The observed timeout root cause was transport semantics, not LangGraph ignoring its deadline: the graph propagated its remaining budget, but sync `httpx` timeouts bounded individual inactive I/O operations, and the manual elapsed check ran only after response bytes arrived. The shared async transport now wraps the entire exchange in an absolute cancellable client deadline. A targeted real `gemma3:4b` request configured for 1.2 seconds returned `AgentLLMTimeout` in 1.248 seconds on this machine. This demonstrates client-side enforcement, not guaranteed cancellation of Ollama's separate model computation.
+
+Both historical grounded failures were reproduced with actual Gemma output. The JSON was structurally valid, but Gemma changed the source sentence `The shutters...` to lowercase `the shutters...`; the case-sensitive evidence check correctly rejected it. The new discriminated answer schema exposes answered/insufficient cross-field requirements to constrained generation, the prompt explicitly requires character-for-character evidence, and one strict regeneration is allowed within the same deadline. No case-insensitive match, fuzzy quote repair or fabricated citation was added.
+
+Mechanical citation validity is not semantic entailment, factual correctness, completeness or faithfulness; `factual_entailment_measured` is always false. Ten synthetic questions are too small for production-quality claims, and CPU timing is hardware/runtime dependent. Do not tune routing, prompts or retrieval against this same dataset and report the result as generalization. Preserve v1 for comparisons, create a new dataset version for label/content changes, and maintain a separate unseen holdout before optimization. Real runs use local compute and may be slow, but do not require a paid API.

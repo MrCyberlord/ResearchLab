@@ -14,6 +14,8 @@ from app.main import create_app
     {"llm_base_url": "http://localhost:bad"},
     {"llm_model": " "},
     {"llm_timeout_seconds": 0},
+    {"llm_connect_retries": -1},
+    {"llm_connect_retries": 3},
     {"rag_max_context_bytes": 7000},
     {"llm_context_tokens": 4096},
     {"retrieval_min_similarity": float("nan")},
@@ -36,6 +38,7 @@ def test_local_provider_defaults_and_url_normalization():
     settings = Settings(_env_file=None, llm_base_url="http://127.0.0.1:11434/")
     assert settings.llm_provider == "ollama"
     assert settings.llm_model == "gemma3:4b"
+    assert settings.llm_connect_retries == 1
     assert settings.llm_base_url == "http://127.0.0.1:11434"
     assert settings.retrieval_strategy == "semantic"
     assert settings.semantic_candidate_count == settings.keyword_candidate_count == 20

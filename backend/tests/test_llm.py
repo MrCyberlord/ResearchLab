@@ -13,9 +13,9 @@ def response_payload(**overrides):
     result = {
         "model": "gemma3:4b", "done": True, "done_reason": "stop",
         "message": {"role": "assistant", "content": json.dumps({
+            "status": "answered",
             "answer": "The warranty lasts three years [S1].",
             "evidence": [{"source_id": "S1", "quote": "The warranty lasts three years."}],
-            "insufficient_evidence": False,
         })},
         "prompt_eval_count": 50, "eval_count": 22,
     }
@@ -42,6 +42,7 @@ def test_ollama_request_and_usage_are_real_contract():
                                  {"role": "user", "content": "Question and sources"}]
     assert body["options"] == {"temperature": 0, "num_ctx": 8192, "num_predict": 512}
     assert body["format"]["$defs"]["_Evidence"]["properties"]["source_id"]["enum"] == ["S1"]
+    assert body["format"]["discriminator"]["propertyName"] == "status"
     assert result.answer == "The warranty lasts three years [S1]."
     assert result.evidence[0].source_id == "S1"
     assert result.usage.prompt_tokens == 50 and result.usage.completion_tokens == 22
@@ -85,6 +86,13 @@ def test_malformed_envelopes_are_rejected(change):
 
 
 @pytest.mark.parametrize("answer", [
+    {"status": "answered", "answer": "unsupported", "evidence": []},
+    {"status": "answered", "answer": "", "evidence": [{"source_id": "S1", "quote": "some quote"}]},
+    {"status": "answered", "answer": "unsupported", "evidence": [{"source_id": "S999", "quote": "some quote"}]},
+    {"status": "answered", "answer": "unsupported", "evidence": [{"source_id": "S1", "quote": "   "}]},
+    {"status": "answered", "answer": "unsupported", "evidence": [{"source_id": "S1", "quote": "x" * 1001}]},
+    {"status": "insufficient_evidence", "answer": "unsupported"},
+    {"status": "answered", "answer": "unsupported", "evidence": [{"source_id": "S1", "quote": "some quote"}], "extra": "ignored?"},
     {"answer": "unsupported", "evidence": [], "insufficient_evidence": False},
     {"answer": "", "evidence": [{"source_id": "S1", "quote": "some quote"}], "insufficient_evidence": False},
     {"answer": "unsupported", "evidence": [{"source_id": "S999", "quote": "some quote"}], "insufficient_evidence": False},
@@ -101,7 +109,7 @@ def test_invalid_structured_answers_are_rejected(answer):
 
 def test_insufficient_evidence_is_explicit_and_usage_can_be_absent():
     payload = response_payload(message={"role": "assistant", "content": json.dumps({
-        "answer": "", "evidence": [], "insufficient_evidence": True})})
+        "status": "insufficient_evidence"})})
     payload.pop("prompt_eval_count"); payload.pop("eval_count")
     result = provider(lambda request: httpx.Response(200, json=payload)).generate("system", "user", ["S1"])
     assert result.insufficient_evidence and result.answer == "" and result.evidence == [] and result.usage is None

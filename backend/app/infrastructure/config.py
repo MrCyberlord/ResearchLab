@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     llm_context_tokens: int = Field(default=8192, ge=2048, le=65536)
     llm_max_output_tokens: int = Field(default=512, ge=64, le=4096)
     llm_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    llm_connect_retries: int = Field(default=1, ge=0, le=2)
     agent_graph_step_limit: int = Field(default=20, ge=8, le=40)
     agent_execution_timeout_seconds: float = Field(default=120, ge=1, le=600)
     agent_max_question_chars: int = Field(default=2000, ge=100, le=10000)

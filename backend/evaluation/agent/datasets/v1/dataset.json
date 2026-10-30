@@ -1,0 +1,135 @@
+{
+  "version": "researchlab-agent-eval-v1",
+  "title": "Synthetic document-research agent evaluation",
+  "license": "CC0-1.0",
+  "chunking": {"size": 700, "overlap": 100},
+  "retrieval": {"min_similarity": 0.15},
+  "documents": [
+    {
+      "key": "polar_greenhouse",
+      "filename": "polar-greenhouse-handbook.txt",
+      "pages": [
+        "At the fictional Borealis greenhouse, temperature sensors trigger insulated thermal shutters whenever the interior falls below 12 degrees Celsius. The shutters close automatically after sunset to protect young seedlings from radiant heat loss. Operators verify the seal indicator rather than closing panels by hand.",
+        "Condensation collected from the roof enters a two-stage recovery loop. A mesh screen removes debris before ultraviolet treatment. Reclaimed water is held for twelve hours, then a conductivity test must pass before the water can return to the hydroponic reservoir."
+      ]
+    },
+    {
+      "key": "lunar_power",
+      "filename": "lunar-power-procedures.txt",
+      "pages": [
+        "The fictional Selene habitat preserves emergency power by shedding decorative lighting first. If battery charge drops below 28 percent, the controller disconnects the workshop and transfers the medical bay to the protected bus. Life-support circulation remains energized throughout the transfer.",
+        "Battery modules receive a capacity inspection every 180 days. The test is postponed during an active dust warning because exterior radiator output may be unstable. A completed inspection is recorded with the module serial number and measured discharge curve."
+      ]
+    },
+    {
+      "key": "ocean_laboratory",
+      "filename": "ocean-laboratory-guide.txt",
+      "pages": [
+        "The fictional Pelagia laboratory maintains cabin pressure with two independent compressors. When one compressor reports excessive vibration, the standby unit starts before the affected unit is isolated. Crew members remain inside until pressure has been stable for ten minutes.",
+        "Salinity probes are calibrated on the first Monday of each month with two certified reference solutions. Technicians rinse the probe with fresh water between solutions and reject the calibration if drift exceeds 0.4 practical salinity units."
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "g01_llm_definition",
+      "question": "What is a large language model?",
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "relevant": [],
+      "document_filter": null,
+      "tags": ["general_knowledge"]
+    },
+    {
+      "id": "g02_llm_paraphrase",
+      "question": "in simple terms what does llm mean",
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "relevant": [],
+      "document_filter": null,
+      "tags": ["general_knowledge", "paraphrase"]
+    },
+    {
+      "id": "g03_ambiguous_calibration",
+      "question": "Why do calibration schedules matter?",
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "relevant": [],
+      "document_filter": null,
+      "tags": ["general_knowledge", "ambiguous"]
+    },
+    {
+      "id": "d01_seedling_protection",
+      "question": "According to the uploaded Borealis greenhouse handbook, how are seedlings protected from heat loss after sunset?",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "relevant": [{"document": "polar_greenhouse", "page": 1, "chunk_order": 0}],
+      "document_filter": null,
+      "tags": ["document_grounded"]
+    },
+    {
+      "id": "d02_seedling_paraphrase",
+      "question": "Based only on the provided greenhouse file, what automated nighttime measure keeps young plants warm?",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "relevant": [{"document": "polar_greenhouse", "page": 1, "chunk_order": 0}],
+      "document_filter": ["polar_greenhouse"],
+      "tags": ["document_grounded", "paraphrase"]
+    },
+    {
+      "id": "d03_low_battery_response",
+      "question": "What does the uploaded Selene power procedure require when stored electricity falls below its threshold?",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "relevant": [{"document": "lunar_power", "page": 1, "chunk_order": 0}],
+      "document_filter": ["lunar_power"],
+      "tags": ["document_grounded"]
+    },
+    {
+      "id": "d04_probe_schedule",
+      "question": "From the selected ocean laboratory guide, when are salinity probes calibrated and what invalidates calibration?",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "relevant": [{"document": "ocean_laboratory", "page": 2, "chunk_order": 1}],
+      "document_filter": ["ocean_laboratory"],
+      "tags": ["document_grounded"]
+    },
+    {
+      "id": "u01_uniform_colour",
+      "question": "According to the uploaded Borealis handbook, what colour uniforms do greenhouse operators wear?",
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "relevant": [],
+      "document_filter": ["polar_greenhouse"],
+      "tags": ["unanswerable_document"]
+    },
+    {
+      "id": "u02_ambiguous_manual",
+      "question": "What does the uploaded manual say about language models?",
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "relevant": [],
+      "document_filter": null,
+      "tags": ["unanswerable_document", "ambiguous"]
+    },
+    {
+      "id": "r01_repeated_empty_search",
+      "question": "Search the uploaded manuals for the Aurora antenna reset code. If the first search is empty, try the same query again with fewer results.",
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "relevant": [],
+      "document_filter": null,
+      "tags": ["unanswerable_document", "repeated_search"]
+    }
+  ]
+}

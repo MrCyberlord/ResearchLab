@@ -21,6 +21,7 @@ dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
 
 [project.scripts]
 researchlab-eval = "app.evaluation.cli:main"
+researchlab-agent-eval = "app.evaluation.agent_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

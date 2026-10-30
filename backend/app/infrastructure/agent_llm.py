@@ -11,6 +11,16 @@ from app.domain.agent import (
     AgentLLMUnavailable, AgentTokenUsage,
 )
 from app.infrastructure.config import Settings
+from app.infrastructure.ollama_http import (
+    BoundedOllamaHTTPClient, OllamaHTTPDeadlineExceeded, OllamaHTTPInvalidResponse,
+    OllamaHTTPUnavailable,
+)
+
+AGENT_SCOPE_PROMPT_VERSION = "scope-v2"
+AGENT_DOCUMENT_DECISION_PROMPT_VERSION = "document-action-v2"
+AGENT_DOCUMENT_DECISION_SCHEMA_VERSION = "document-action-schema-v2"
+AGENT_GENERATION_SCHEMA_VERSION = "agent-answer-schema-v1"
+AGENT_TEMPERATURE = 0
 
 
 def _strict_json(value: str):
@@ -129,13 +139,15 @@ class OllamaAgentLLM:
 
     def __init__(self, base_url: str, model: str, timeout_seconds: float = 120,
                  context_tokens: int = 8192, max_output_tokens: int = 384,
-                 max_response_bytes: int = 65536, *, transport: httpx.BaseTransport | None = None):
+                 max_response_bytes: int = 65536, connect_retries: int = 1, *,
+                 transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None):
         self.base_url = str(base_url).rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.context_tokens = context_tokens
         self.max_output_tokens = max_output_tokens
         self.max_response_bytes = max_response_bytes
+        self.connect_retries = connect_retries
         self._transport = transport
 
     def _chat(self, system_prompt: str, user_prompt: str, schema: dict,
@@ -150,38 +162,20 @@ class OllamaAgentLLM:
             "messages": [{"role": "system", "content": system_prompt},
                          {"role": "user", "content": user_prompt}],
             "stream": False, "format": schema,
-            "options": {"temperature": 0, "num_ctx": self.context_tokens,
+            "options": {"temperature": AGENT_TEMPERATURE, "num_ctx": self.context_tokens,
                         "num_predict": self.max_output_tokens},
         }
-        started = perf_counter()
-        data = bytearray()
         try:
-            with httpx.Client(timeout=httpx.Timeout(timeout, connect=min(5, timeout)),
-                              trust_env=False, follow_redirects=False,
-                              transport=self._transport) as client:
-                with client.stream("POST", self.base_url + "/api/chat", json=request_body,
-                                   headers={"Accept": "application/json", "Accept-Encoding": "identity"}) as response:
-                    if response.status_code != 200:
-                        raise AgentLLMUnavailable("Ollama could not complete the Agentic request.")
-                    if response.headers.get("content-encoding", "identity").lower() != "identity":
-                        raise AgentLLMInvalidResponse("Ollama returned an unsupported response encoding.")
-                    length = response.headers.get("content-length")
-                    if length is not None:
-                        try:
-                            if int(length) < 0 or int(length) > self.max_response_bytes:
-                                raise ValueError("Response size limit exceeded")
-                        except ValueError:
-                            raise AgentLLMInvalidResponse("Ollama returned an invalid or oversized response.") from None
-                    for chunk in response.iter_bytes(chunk_size=16384):
-                        if perf_counter() - started > timeout:
-                            raise AgentLLMTimeout("Ollama Agentic generation timed out.")
-                        data.extend(chunk)
-                        if len(data) > self.max_response_bytes:
-                            raise AgentLLMInvalidResponse("Ollama returned an oversized response.")
-        except httpx.TimeoutException:
+            data = BoundedOllamaHTTPClient(
+                self.base_url, self.max_response_bytes, self.connect_retries,
+                transport=self._transport,
+            ).post_chat(request_body, timeout)
+        except OllamaHTTPDeadlineExceeded:
             raise AgentLLMTimeout("Ollama Agentic generation timed out.") from None
-        except httpx.HTTPError:
+        except OllamaHTTPUnavailable:
             raise AgentLLMUnavailable("Ollama is unavailable. Check the configured local service and model.") from None
+        except OllamaHTTPInvalidResponse:
+            raise AgentLLMInvalidResponse("Ollama returned an invalid or oversized response.") from None
 
         try:
             payload = _strict_json(data.decode("utf-8"))
@@ -274,5 +268,5 @@ def create_agent_generation_provider(settings: Settings) -> OllamaAgentLLM:
         settings.llm_base_url, settings.llm_model,
         settings.agent_execution_timeout_seconds,
         settings.llm_context_tokens, settings.agent_max_output_tokens,
-        settings.agent_max_response_bytes,
+        settings.agent_max_response_bytes, settings.llm_connect_retries,
     )

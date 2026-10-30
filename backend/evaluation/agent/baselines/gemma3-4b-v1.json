@@ -1,0 +1,916 @@
+{
+  "agent": {
+    "document_decision_prompt_version": "document-action-v2",
+    "document_decision_schema_version": "document-action-schema-v2",
+    "execution_timeout_seconds": 120.0,
+    "generation_schema_version": "agent-answer-schema-v1",
+    "graph_step_limit": 20,
+    "max_tool_calls": 3,
+    "model": "gemma3:4b",
+    "provider": "ollama",
+    "scope_prompt_version": "scope-v2",
+    "temperature": 0,
+    "tool_top_k": 5
+  },
+  "cases": [
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 28721.4,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g01_llm_definition",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "direct",
+      "tags": [
+        "general_knowledge"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 9471.04,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g01_llm_definition",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "direct",
+      "tags": [
+        "general_knowledge"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 15044.96,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g02_llm_paraphrase",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "direct",
+      "tags": [
+        "general_knowledge",
+        "paraphrase"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 6864.09,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g02_llm_paraphrase",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "direct",
+      "tags": [
+        "general_knowledge",
+        "paraphrase"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 15582.93,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g03_ambiguous_calibration",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "direct",
+      "tags": [
+        "general_knowledge",
+        "ambiguous"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": "general_knowledge",
+      "citations": [],
+      "expected_scope": "general_knowledge",
+      "expected_status": "direct",
+      "expected_tool_use": false,
+      "graph_steps": 3,
+      "latency_ms": 7276.65,
+      "node_outcomes": [
+        "decide:answer_direct",
+        "direct_response:completed",
+        "finalize:direct"
+      ],
+      "question_id": "g03_ambiguous_calibration",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "direct",
+      "tags": [
+        "general_knowledge",
+        "ambiguous"
+      ],
+      "tool_activity": [],
+      "tool_call_count": 0,
+      "tool_used": false
+    },
+    {
+      "actual_scope": null,
+      "citations": [],
+      "error_type": "AgentLLMTimeout",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": null,
+      "latency_ms": 1203651.03,
+      "node_outcomes": [],
+      "question_id": "d01_seedling_protection",
+      "relevant": [
+        [
+          "polar_greenhouse",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 1,
+      "status": "error",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [],
+      "tool_call_count": null,
+      "tool_used": null
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [
+        {
+          "quote_valid": true,
+          "reference": {
+            "chunk_order": 0,
+            "document": "polar_greenhouse",
+            "page": 1
+          },
+          "reference_key": [
+            "polar_greenhouse",
+            1,
+            0
+          ],
+          "reference_match": true
+        }
+      ],
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 38951.65,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:answer_grounded",
+        "grounded_response:grounded",
+        "finalize:grounded"
+      ],
+      "question_id": "d01_seedling_protection",
+      "relevant": [
+        [
+          "polar_greenhouse",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 2,
+      "status": "grounded",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 34.318,
+          "outcome": "results",
+          "query": "seedlings heat loss protection Borealis handbook",
+          "result_count": 5,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": null,
+      "citations": [],
+      "error_type": "LLMInvalidResponse",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": null,
+      "latency_ms": 40652.15,
+      "node_outcomes": [],
+      "question_id": "d02_seedling_paraphrase",
+      "relevant": [
+        [
+          "polar_greenhouse",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 1,
+      "status": "error",
+      "tags": [
+        "document_grounded",
+        "paraphrase"
+      ],
+      "tool_activity": [],
+      "tool_call_count": null,
+      "tool_used": null
+    },
+    {
+      "actual_scope": null,
+      "citations": [],
+      "error_type": "LLMInvalidResponse",
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": null,
+      "latency_ms": 34551.88,
+      "node_outcomes": [],
+      "question_id": "d02_seedling_paraphrase",
+      "relevant": [
+        [
+          "polar_greenhouse",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 2,
+      "status": "error",
+      "tags": [
+        "document_grounded",
+        "paraphrase"
+      ],
+      "tool_activity": [],
+      "tool_call_count": null,
+      "tool_used": null
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 22680.6,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "d03_low_battery_response",
+      "relevant": [
+        [
+          "lunar_power",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 1,
+      "status": "insufficient_evidence",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 43.131,
+          "outcome": "results",
+          "query": "Selene power procedure low electricity threshold requirements",
+          "result_count": 2,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 19289.08,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "d03_low_battery_response",
+      "relevant": [
+        [
+          "lunar_power",
+          1,
+          0
+        ]
+      ],
+      "repeat_index": 2,
+      "status": "insufficient_evidence",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 36.862,
+          "outcome": "results",
+          "query": "Selene power procedure low electricity threshold requirements",
+          "result_count": 2,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [
+        {
+          "quote_valid": true,
+          "reference": {
+            "chunk_order": 1,
+            "document": "ocean_laboratory",
+            "page": 2
+          },
+          "reference_key": [
+            "ocean_laboratory",
+            2,
+            1
+          ],
+          "reference_match": true
+        }
+      ],
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 32638.43,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:answer_grounded",
+        "grounded_response:grounded",
+        "finalize:grounded"
+      ],
+      "question_id": "d04_probe_schedule",
+      "relevant": [
+        [
+          "ocean_laboratory",
+          2,
+          1
+        ]
+      ],
+      "repeat_index": 1,
+      "status": "grounded",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 47.913,
+          "outcome": "results",
+          "query": "ocean laboratory salinity probe calibration timing and invalidation",
+          "result_count": 1,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [
+        {
+          "quote_valid": true,
+          "reference": {
+            "chunk_order": 1,
+            "document": "ocean_laboratory",
+            "page": 2
+          },
+          "reference_key": [
+            "ocean_laboratory",
+            2,
+            1
+          ],
+          "reference_match": true
+        }
+      ],
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 24260.37,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:answer_grounded",
+        "grounded_response:grounded",
+        "finalize:grounded"
+      ],
+      "question_id": "d04_probe_schedule",
+      "relevant": [
+        [
+          "ocean_laboratory",
+          2,
+          1
+        ]
+      ],
+      "repeat_index": 2,
+      "status": "grounded",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 40.319,
+          "outcome": "results",
+          "query": "ocean laboratory salinity probe calibration timing and invalidation",
+          "result_count": 1,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 22670.16,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "u01_uniform_colour",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 36.277,
+          "outcome": "results",
+          "query": "greenhouse operator uniform colour borealis handbook",
+          "result_count": 2,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 19443.13,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "u01_uniform_colour",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 42.755,
+          "outcome": "results",
+          "query": "greenhouse operator uniform colour borealis handbook",
+          "result_count": 2,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 19107.35,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:empty",
+        "observe:empty",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "u02_ambiguous_manual",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document",
+        "ambiguous"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 46.414,
+          "outcome": "empty",
+          "query": "language models manual",
+          "result_count": 0,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 14348.87,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:empty",
+        "observe:empty",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "u02_ambiguous_manual",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document",
+        "ambiguous"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 33.827,
+          "outcome": "empty",
+          "query": "language models manual",
+          "result_count": 0,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 23033.96,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:empty",
+        "observe:empty",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "r01_repeated_empty_search",
+      "relevant": [],
+      "repeat_index": 1,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document",
+        "repeated_search"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 44.157,
+          "outcome": "empty",
+          "query": "Aurora antenna reset code",
+          "result_count": 0,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    },
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "expected_scope": "document_research",
+      "expected_status": "insufficient_evidence",
+      "expected_tool_use": true,
+      "graph_steps": 6,
+      "latency_ms": 17577.28,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:empty",
+        "observe:empty",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "question_id": "r01_repeated_empty_search",
+      "relevant": [],
+      "repeat_index": 2,
+      "status": "insufficient_evidence",
+      "tags": [
+        "unanswerable_document",
+        "repeated_search"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "duration_ms": 53.68,
+          "outcome": "empty",
+          "query": "Aurora antenna reset code",
+          "result_count": 0,
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 1,
+      "tool_used": true
+    }
+  ],
+  "dataset": {
+    "attempted_run_count": 20,
+    "category_counts": {
+      "ambiguous": 2,
+      "document_grounded": 4,
+      "general_knowledge": 3,
+      "paraphrase": 2,
+      "repeated_search": 1,
+      "unanswerable_document": 3
+    },
+    "document_count": 3,
+    "license": "CC0-1.0",
+    "question_count": 10,
+    "repeats": 2,
+    "sha256": "e4d6b06b9ce9d3cdfa6118807748da8e90acf66445d4ec9f0bab3573d34d8245",
+    "title": "Synthetic document-research agent evaluation",
+    "version": "researchlab-agent-eval-v1"
+  },
+  "limitations": {
+    "citation_check": "mechanical source identity and verbatim quote containment only",
+    "factual_entailment_measured": false,
+    "sample_size": "small synthetic dataset; not representative of production domains"
+  },
+  "metric_definitions": {
+    "abstention_accuracy": "expected versus observed insufficient-evidence behavior / all attempted runs",
+    "citation_validity": "citations with an expected document/page/chunk identity and verbatim quote containment / all citations",
+    "configured_timeout_overrun_count": "attempts whose wall-clock latency exceeded the configured total execution timeout",
+    "document_scope_compliance": "expected general/document scope matched / all attempted runs; errors are incorrect",
+    "grounded_answer_rate": "grounded responses / runs labelled grounded",
+    "latency": "nearest-rank p50/p95 wall-clock AgentService latency, including failed attempts",
+    "tool_selection_accuracy": "expected tool-use boolean matched / all attempted runs; errors are incorrect",
+    "variability": "unique scope/status/tool-use/tool-count/error signatures across repeated runs"
+  },
+  "metrics": {
+    "abstention_accuracy": 0.75,
+    "citation_coverage": 0.375,
+    "citation_reference_precision": 1.0,
+    "citation_validity": 1.0,
+    "configured_timeout_overrun_count": 1,
+    "denominators": {
+      "attempted_runs": 20,
+      "citation_count": 3,
+      "completed_runs": 17,
+      "expected_abstention_runs": 6,
+      "expected_grounded_runs": 8,
+      "expected_relevant_reference_count": 8
+    },
+    "document_scope_compliance": 0.85,
+    "end_to_end_latency_ms": {
+      "p50": 19443.13,
+      "p95": 40652.15,
+      "sample_count": 20
+    },
+    "error_count": 3,
+    "expected_status_accuracy": 0.75,
+    "factual_entailment_measured": false,
+    "graph_steps": {
+      "max": 6,
+      "mean": 4.941,
+      "min": 3,
+      "sample_count": 17
+    },
+    "grounded_answer_rate": 0.375,
+    "mechanical_quote_validity": 1.0,
+    "tool_calls": {
+      "max": 1,
+      "mean": 0.647,
+      "min": 0,
+      "sample_count": 17
+    },
+    "tool_selection_accuracy": 0.85,
+    "unanswerable_abstention_rate": 1.0
+  },
+  "retrieval": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_profile": "7b9b125c9b67b1a84b8a4bafd993c2cd1da91042688feeaf9cab6c55cda3778b",
+    "embedding_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "min_similarity": 0.15,
+    "strategy": "semantic"
+  },
+  "run": {
+    "created_at_utc": "2026-10-30T13:44:18+00:00",
+    "git_revision": "d7c775f617d7a5265b85c73420bc2a2a7b1e7014",
+    "git_worktree_dirty": true,
+    "isolation": "private transaction-scoped PostgreSQL schema rolled back after the run",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "production_counts_after": [
+      1,
+      3
+    ],
+    "production_counts_before": [
+      1,
+      3
+    ],
+    "production_data_mutated": false,
+    "python": "3.14.7",
+    "run_id": "milestone-3ca-gemma3-4b-v1"
+  },
+  "schema_version": 1,
+  "usage": {
+    "completion_tokens": 1236,
+    "prompt_tokens": 10808,
+    "samples_with_usage": 17
+  },
+  "variability": {
+    "question_count": 10,
+    "questions": [
+      {
+        "question_id": "d01_seedling_protection",
+        "run_count": 2,
+        "signature_counts": {
+          "None|error|None|None|AgentLLMTimeout": 1,
+          "document_research|grounded|True|1|None": 1
+        },
+        "unique_decision_signatures": 2
+      },
+      {
+        "question_id": "d02_seedling_paraphrase",
+        "run_count": 2,
+        "signature_counts": {
+          "None|error|None|None|LLMInvalidResponse": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "d03_low_battery_response",
+        "run_count": 2,
+        "signature_counts": {
+          "document_research|insufficient_evidence|True|1|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "d04_probe_schedule",
+        "run_count": 2,
+        "signature_counts": {
+          "document_research|grounded|True|1|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "g01_llm_definition",
+        "run_count": 2,
+        "signature_counts": {
+          "general_knowledge|direct|False|0|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "g02_llm_paraphrase",
+        "run_count": 2,
+        "signature_counts": {
+          "general_knowledge|direct|False|0|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "g03_ambiguous_calibration",
+        "run_count": 2,
+        "signature_counts": {
+          "general_knowledge|direct|False|0|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "r01_repeated_empty_search",
+        "run_count": 2,
+        "signature_counts": {
+          "document_research|insufficient_evidence|True|1|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "u01_uniform_colour",
+        "run_count": 2,
+        "signature_counts": {
+          "document_research|insufficient_evidence|True|1|None": 2
+        },
+        "unique_decision_signatures": 1
+      },
+      {
+        "question_id": "u02_ambiguous_manual",
+        "run_count": 2,
+        "signature_counts": {
+          "document_research|insufficient_evidence|True|1|None": 2
+        },
+        "unique_decision_signatures": 1
+      }
+    ],
+    "questions_with_variation": 1,
+    "signature": "scope|status|tool_used|tool_call_count|error_type",
+    "stable_question_rate": 0.9
+  }
+}
