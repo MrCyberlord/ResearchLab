@@ -588,3 +588,29 @@ The observed timeout root cause was transport semantics, not LangGraph ignoring 
 Both historical grounded failures were reproduced with actual Gemma output. The JSON was structurally valid, but Gemma changed the source sentence `The shutters...` to lowercase `the shutters...`; the case-sensitive evidence check correctly rejected it. The new discriminated answer schema exposes answered/insufficient cross-field requirements to constrained generation, the prompt explicitly requires character-for-character evidence, and one strict regeneration is allowed within the same deadline. No case-insensitive match, fuzzy quote repair or fabricated citation was added.
 
 Mechanical citation validity is not semantic entailment, factual correctness, completeness or faithfulness; `factual_entailment_measured` is always false. Ten synthetic questions are too small for production-quality claims, and CPU timing is hardware/runtime dependent. Do not tune routing, prompts or retrieval against this same dataset and report the result as generalization. Preserve v1 for comparisons, create a new dataset version for label/content changes, and maintain a separate unseen holdout before optimization. Real runs use local compute and may be slow, but do not require a paid API.
+
+## Agent quality and observability (Milestone 3C-B)
+
+The original 3C-A baseline remains unchanged. Its apparent three tool-selection/scope misses were the three execution errors (`d01` timeout and two `d02` quote-validation failures), because evaluation errors intentionally remain in those denominators. Every completed baseline run selected the labelled scope and tool-use behavior. The five status misses were those same errors plus both `d03_low_battery_response` attempts. `d03` is unambiguously document-scoped and answerable; both scoped lunar-document chunks were retrieved, including the threshold/actions passage, but Gemma prematurely selected insufficient evidence. No failed case was attributable to retrieval isolation or a relabelled dataset example.
+
+Document decisions now require a strict, content-free `reason_code`. The initial schema permits `evidence_needed`; after any search observation, a state-dependent schema makes that reason invalid and permits only `refine_search`, `evidence_supports_answer`, `evidence_does_not_support_answer` or `search_budget_exhausted` on their matching action branches. The v4 prompt clarifies that paraphrases and synonyms can be responsive and that the separate strict grounding step—not the router—owns final source/quote validation. General questions still require the independent `general_knowledge` scope decision, and document requests can never fall back to an ungrounded answer.
+
+Successful API metadata now adds decision action/scope/reason, evidence count, remaining deadline budget, validation retry/failure code, execution budget, retrieval strategy, document-filter count, newly added evidence count and a 16-character canonical-query fingerprint. The existing model-generated search query remains caller-visible in Tool activity for usability, but it is never written to structured logs. Logs whitelist only safe enums, types, counts, timings, budgets and fingerprints; they exclude questions, raw queries, prompts, quotes and document text. Exceptions carry bounded partial node/tool history for evaluation and failure logs without changing the public error response or exposing content. The Agentic UI validates and displays the additive trace fields.
+
+Focused real-model runs used the same dataset, isolated PostgreSQL schema, semantic retrieval and one repeat of only `d03`; neither overwrites or replaces the original baseline:
+
+- `gemma3-4b-v1-quality-v3-attempt.json`: prompt/schema v3 made the reason explicit, but Gemma performed two successful searches and then abstained. Status accuracy remained 0/1; latency was 61.35 seconds.
+- `gemma3-4b-v1-quality-after-v4.json`: the state-dependent schema eliminated the invalid second `evidence_needed` search. Gemma performed one successful search, received both chunks, and still selected `evidence_does_not_support_answer`. Status accuracy remained 0/1; latency was 36.44 seconds.
+
+The reduced tool count and latency are observations from one CPU-bound attempt, not evidence of a general improvement. The confirmed status defect remains a Gemma 3:4b evidence-assessment limitation. Further prompt tuning against this single item would risk evaluation leakage, so 3C-B does not override the decision, weaken citation checks, relabel the case or automatically route every nonempty retrieval to generation. A future evaluation should use more varied/held-out evidence-assessment cases or a stronger local model before changing production routing.
+
+Run the focused deterministic contracts without Ollama:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider `
+  backend/tests/test_agent_llm.py `
+  backend/tests/test_agent_graph.py `
+  backend/tests/test_agent_api.py `
+  backend/tests/test_agent_evaluation.py `
+  backend/tests/test_health.py
+```

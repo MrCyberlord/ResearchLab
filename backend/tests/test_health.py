@@ -40,10 +40,16 @@ def test_agent_tool_logging_whitelists_counts_not_sensitive_content():
     record.agent_tool = "document_search"
     record.tool_call_count = 2
     record.retrieved_chunk_count = 4
+    record.query_fingerprint = "0123456789abcdef"
+    record.agent_reason = "evidence_needed"
+    record.remaining_budget_ms = 90000
     record.query = "private search query"
     record.document_text = "private evidence"
     payload = json.loads(JsonFormatter().format(record))
     assert payload["agent_tool"] == "document_search"
     assert payload["tool_call_count"] == 2
     assert payload["retrieved_chunk_count"] == 4
+    assert payload["query_fingerprint"] == "0123456789abcdef"
+    assert payload["agent_reason"] == "evidence_needed"
+    assert payload["remaining_budget_ms"] == 90000
     assert "query" not in payload and "document_text" not in payload

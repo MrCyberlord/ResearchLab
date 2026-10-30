@@ -47,7 +47,8 @@ def test_agent_ollama_tool_decision_is_model_generated_and_structured():
             "scope": "document_research",
         })}),
         payload(message={"role": "assistant", "content": json.dumps({
-            "action": "search_documents", "query": "kettle warranty duration", "top_k": 4,
+            "action": "search_documents", "reason_code": "evidence_needed",
+            "query": "kettle warranty duration", "top_k": 4,
         })}),
     ])
     def handler(request):
@@ -58,6 +59,7 @@ def test_agent_ollama_tool_decision_is_model_generated_and_structured():
     )
     assert result.action == "search_documents"
     assert result.scope == "document_research"
+    assert result.reason_code == "evidence_needed"
     assert result.query == "kettle warranty duration" and result.top_k == 4
     assert len(captured) == 2
     scope_user = json.loads(captured[0]["messages"][1]["content"])
@@ -82,6 +84,7 @@ def test_general_scope_returns_direct_decision_without_tool_schema_call():
         "what is llm", [{"searches": [], "evidence": []}], 3,
     )
     assert decision.action == "answer_direct" and decision.scope == "general_knowledge"
+    assert decision.reason_code == "general_question"
     assert decision.query is None and decision.top_k is None
     assert len(captured) == 1
 
@@ -92,6 +95,8 @@ def test_general_scope_returns_direct_decision_without_tool_schema_call():
     {"action": "answer_direct"},
     {"action": "unknown"},
     {"action": "answer_grounded", "query": "E1", "top_k": 1},
+    {"action": "answer_grounded", "reason_code": "refine_search"},
+    {"action": "insufficient_evidence", "reason_code": "evidence_supports_answer"},
 ])
 def test_invalid_structured_tool_decisions_are_rejected(decision):
     responses = iter([
@@ -108,13 +113,69 @@ def test_invalid_structured_tool_decisions_are_rejected(decision):
 
 def test_document_terminal_action_has_no_permissive_tool_argument_fallback():
     body = payload(message={"role": "assistant", "content": json.dumps({
-        "action": "answer_grounded",
+        "action": "answer_grounded", "reason_code": "evidence_supports_answer",
     })})
     decision = provider(lambda request: httpx.Response(200, json=body)).decide(
         "question", [{"searches": [{"query": "q"}], "evidence": [{"text": "e"}]}], 2,
     )
     assert decision.action == "answer_grounded"
+    assert decision.reason_code == "evidence_supports_answer"
     assert decision.query is None and decision.top_k is None
+
+
+def test_paraphrased_document_evidence_has_explicit_grounded_decision_contract():
+    captured = {}
+    body = payload(message={"role": "assistant", "content": json.dumps({
+        "action": "answer_grounded", "reason_code": "evidence_supports_answer",
+    })})
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=body)
+
+    decision = provider(handler).decide(
+        "What happens when stored electricity falls below its threshold?",
+        [{"searches": [{"result_count": 2, "outcome": "results"}], "evidence": [{
+            "evidence_id": "E1",
+            "text": "If battery charge drops below 28 percent, the workshop disconnects.",
+        }]}],
+        2,
+    )
+    assert decision.action == "answer_grounded"
+    assert decision.reason_code == "evidence_supports_answer"
+    prompt = captured["body"]["messages"][0]["content"]
+    assert "paraphrases or uses synonyms" in prompt
+    assert "Do not require an exact word match" in prompt
+    schema = json.dumps(captured["body"]["format"], sort_keys=True)
+    assert "evidence_supports_answer" in schema
+    assert "evidence_does_not_support_answer" in schema
+
+
+def test_search_reason_schema_changes_after_document_observation():
+    initial_responses = iter([
+        payload(message={"role": "assistant", "content": json.dumps({
+            "scope": "document_research",
+        })}),
+        payload(message={"role": "assistant", "content": json.dumps({
+            "action": "search_documents", "reason_code": "refine_search",
+            "query": "refine too early", "top_k": 2,
+        })}),
+    ])
+    with pytest.raises(AgentLLMInvalidResponse):
+        provider(lambda request: httpx.Response(
+            200, json=next(initial_responses),
+        )).decide("What does my document say?", [], 3)
+
+    observed = payload(message={"role": "assistant", "content": json.dumps({
+        "action": "search_documents", "reason_code": "evidence_needed",
+        "query": "initial reason too late", "top_k": 2,
+    })})
+    with pytest.raises(AgentLLMInvalidResponse):
+        provider(lambda request: httpx.Response(200, json=observed)).decide(
+            "What does my document say?",
+            [{"searches": [{"outcome": "results"}], "evidence": [{"text": "fact"}]}],
+            2,
+        )
 
 
 def test_invalid_scope_decision_is_rejected_before_document_action():

@@ -12,7 +12,11 @@ class JsonFormatter(logging.Formatter):
                     "rerank_ms", "retrieval_strategy", "semantic_candidate_count", "keyword_candidate_count",
                     "retrieved_chunk_count", "context_chunk_count", "prompt_tokens", "completion_tokens", "outcome",
                     "agent_route", "agent_node", "agent_step_count", "agent_tool",
-                    "tool_call_count", "validation_retry_count"):
+                    "tool_call_count", "validation_retry_count", "validation_failure_code",
+                    "retry_scheduled", "remaining_budget_ms", "evidence_count",
+                    "evidence_added_count", "document_filter_count", "query_fingerprint",
+                    "agent_action", "agent_scope", "agent_reason", "agent_error_type",
+                    "agent_error_code"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         if record.exc_info:

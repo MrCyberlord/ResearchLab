@@ -119,9 +119,12 @@ def test_multi_step_search_observation_and_grounded_citation_mapping():
     support = chunk(chunk_id=22, filename="actual.pdf", page=4)
     document_id = uuid4()
     application, provider, tool, grounding = service([
-        AgentDecision("search_documents", "kettle warranty", 2, AgentTokenUsage(4, 2)),
-        AgentDecision("search_documents", "Astral warranty duration", 2, AgentTokenUsage(5, 2)),
-        AgentDecision("answer_grounded", usage=AgentTokenUsage(6, 2)),
+        AgentDecision("search_documents", "kettle warranty", 2, AgentTokenUsage(4, 2),
+                      reason_code="evidence_needed"),
+        AgentDecision("search_documents", "Astral warranty duration", 2, AgentTokenUsage(5, 2),
+                      reason_code="refine_search"),
+        AgentDecision("answer_grounded", usage=AgentTokenUsage(6, 2),
+                      reason_code="evidence_supports_answer"),
     ], [[first], [support]])
     result = application.run(
         "What is the warranty duration?", [document_id], "hybrid",
@@ -133,6 +136,8 @@ def test_multi_step_search_observation_and_grounded_citation_mapping():
     assert citation.filename == "first.pdf" and citation.quote in citation.text
     assert result.metadata.route == "document_research"
     assert result.metadata.tool_call_count == 2
+    assert result.metadata.execution_budget_ms == 120000
+    assert 0 < result.metadata.remaining_budget_ms <= 120000
     assert [item.query for item in result.metadata.tool_activity] == [
         "kettle warranty", "Astral warranty duration",
     ]
@@ -141,6 +146,16 @@ def test_multi_step_search_observation_and_grounded_citation_mapping():
         "decide", "document_search", "observe",
         "decide", "grounded_response", "finalize",
     ]
+    decision_traces = [item for item in result.metadata.node_trace if item.node == "decide"]
+    assert [item.decision_reason for item in decision_traces] == [
+        "evidence_needed", "refine_search", "evidence_supports_answer",
+    ]
+    assert decision_traces[-1].evidence_count == 2
+    assert all(item.remaining_budget_ms is not None for item in result.metadata.node_trace)
+    assert all(len(item.query_fingerprint) == 16 for item in result.metadata.tool_activity)
+    assert all(item.retrieval_strategy == "hybrid" for item in result.metadata.tool_activity)
+    assert all(item.document_filter_count == 1 for item in result.metadata.tool_activity)
+    assert [item.evidence_added_count for item in result.metadata.tool_activity] == [1, 1]
     assert all(call[2] == [document_id] and call[3] == "hybrid" for call in tool.calls)
     assert len(provider.decision_calls) == 3 and len(grounding.calls) == 1
     final_observation = provider.decision_calls[-1][1][0]
@@ -212,8 +227,52 @@ def test_grounded_path_rejects_fabricated_citation_labels():
         AgentDecision("search_documents", "query", 1),
         AgentDecision("answer_grounded"),
     ], [[chunk()]], grounding_llm=FabricatingLLM())
-    with pytest.raises(LLMInvalidResponse):
+    with pytest.raises(LLMInvalidResponse) as caught:
         application.run("Research this.")
+    assert caught.value.validation_retry_count == 1
+    assert caught.value.validation_failure_code == "source_out_of_scope"
+    assert caught.value.agent_error_code == "source_out_of_scope"
+    assert [item.node for item in caught.value.agent_trace][-1] == "grounded_response"
+    failed = caught.value.agent_trace[-1]
+    assert failed.outcome == "failed" and failed.error_type == "LLMValidationFailure"
+    assert failed.validation_retry_count == 1
+    assert failed.validation_failure_code == "source_out_of_scope"
+
+
+def test_successful_grounding_retry_is_visible_without_exposing_content_in_trace():
+    class RepairingEvidenceLLM(EvidenceLLM):
+        def generate(self, system_prompt, user_prompt, source_ids, *, timeout_seconds=None):
+            self.calls.append((system_prompt, user_prompt, source_ids, timeout_seconds))
+            quote = (
+                "the shutters close automatically after sunset."
+                if len(self.calls) == 1 else
+                "The shutters close automatically after sunset."
+            )
+            return LLMResult(
+                "Shutters protect seedlings [S1].",
+                [SourceReference("S1", quote)], False, TokenUsage(10, 4),
+            )
+
+    evidence = chunk("The shutters close automatically after sunset.")
+    grounding = RepairingEvidenceLLM()
+    application, _, _, _ = service([
+        AgentDecision(
+            "search_documents", "nighttime seedling protection", 1,
+            reason_code="evidence_needed",
+        ),
+        AgentDecision(
+            "answer_grounded", reason_code="evidence_supports_answer",
+        ),
+    ], [[evidence]], grounding_llm=grounding)
+    result = application.run("What protects the seedlings after sunset?")
+    assert result.status == "grounded" and len(grounding.calls) == 2
+    grounded_trace = next(
+        item for item in result.metadata.node_trace if item.node == "grounded_response"
+    )
+    assert grounded_trace.validation_retry_count == 1
+    assert grounded_trace.validation_failure_code == "quote_mismatch"
+    serialized = json.dumps(grounded_trace.__dict__)
+    assert "shutters" not in serialized.lower()
 
 
 @pytest.mark.parametrize("decision", [

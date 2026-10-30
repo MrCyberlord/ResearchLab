@@ -71,6 +71,8 @@ class GroundedAnswer:
     generation_ms: float
     context_chunk_count: int
     usage: TokenUsage | None
+    validation_retry_count: int = 0
+    validation_failure_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,3 +114,11 @@ class LLMTimeout(Exception):
 
 class LLMInvalidResponse(Exception):
     pass
+
+
+class LLMValidationFailure(LLMInvalidResponse):
+    """Strict grounding failure carrying only a safe diagnostic reason code."""
+
+    def __init__(self, message: str, reason_code: str):
+        super().__init__(message)
+        self.reason_code = reason_code

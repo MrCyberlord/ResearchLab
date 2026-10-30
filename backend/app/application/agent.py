@@ -63,7 +63,28 @@ class AgentService:
                 self.execution_timeout_seconds,
             )
         except GraphRecursionError:
-            raise AgentExecutionLimit("The agent exceeded its configured graph step limit.") from None
+            error = AgentExecutionLimit("The agent exceeded its configured graph step limit.")
+            self.logger.info("agent_execution_failed", extra={
+                "duration_ms": round((perf_counter() - started) * 1000, 3),
+                "agent_error_type": type(error).__name__,
+                "agent_error_code": "graph_step_limit",
+                "outcome": "failed",
+            })
+            raise error from None
+        except Exception as exc:
+            partial_trace = getattr(exc, "agent_trace", [])
+            partial_tools = getattr(exc, "agent_tool_activity", [])
+            self.logger.info("agent_execution_failed", extra={
+                "duration_ms": round((perf_counter() - started) * 1000, 3),
+                "agent_route": getattr(exc, "agent_route", None),
+                "agent_step_count": len(partial_trace),
+                "tool_call_count": len(partial_tools),
+                "remaining_budget_ms": getattr(exc, "agent_remaining_budget_ms", None),
+                "agent_error_type": type(exc).__name__,
+                "agent_error_code": getattr(exc, "agent_error_code", None),
+                "outcome": "failed",
+            })
+            raise
         duration_ms = round((perf_counter() - started) * 1000, 3)
         trace = state["trace"]
         tool_activity = state.get("tool_activity", [])
@@ -78,6 +99,8 @@ class AgentService:
         metadata = (AgentExecutionMetadata(
             state["route"], duration_ms, len(trace), len(tool_activity),
             trace, tool_activity, usage,
+            round(self.execution_timeout_seconds * 1000, 3),
+            trace[-1].remaining_budget_ms if trace else None,
         ) if include_metadata else None)
         return AgentResult(
             state["status"], state.get("answer"), state.get("message"),

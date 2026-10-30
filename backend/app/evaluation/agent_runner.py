@@ -260,8 +260,11 @@ class AgentEvaluationRunner:
                         "latency_ms": round((perf_counter() - started) * 1000, 2),
                         "citations": citations,
                         "tool_activity": [asdict(item) for item in metadata.tool_activity],
+                        "node_trace": [asdict(item) for item in metadata.node_trace],
                         "node_outcomes": [f"{item.node}:{item.outcome}"
                                           for item in metadata.node_trace],
+                        "execution_budget_ms": metadata.execution_budget_ms,
+                        "remaining_budget_ms": metadata.remaining_budget_ms,
                     })
                     if metadata.usage is not None:
                         if metadata.usage.prompt_tokens is not None:
@@ -270,12 +273,34 @@ class AgentEvaluationRunner:
                             completion_tokens += metadata.usage.completion_tokens
                         usage_samples += 1
                 except Exception as exc:
+                    partial_trace = list(getattr(exc, "agent_trace", []))
+                    partial_tools = list(getattr(exc, "agent_tool_activity", []))
+                    route = getattr(exc, "agent_route", None)
+                    tool_count = getattr(exc, "agent_tool_call_count", None)
                     cases.append({
-                        **base, "status": "error", "actual_scope": None,
-                        "tool_used": None, "tool_call_count": None, "graph_steps": None,
+                        **base, "status": "error",
+                        "actual_scope": (
+                            "general_knowledge" if route == "direct" else
+                            "document_research" if route == "document_research" else None
+                        ),
+                        "tool_used": None if tool_count is None else tool_count > 0,
+                        "tool_call_count": tool_count,
+                        "graph_steps": len(partial_trace) if partial_trace else None,
                         "latency_ms": round((perf_counter() - started) * 1000, 2),
-                        "citations": [], "tool_activity": [], "node_outcomes": [],
+                        "citations": [],
+                        "tool_activity": [asdict(item) for item in partial_tools],
+                        "node_trace": [asdict(item) for item in partial_trace],
+                        "node_outcomes": [
+                            f"{item.node}:{item.outcome}" for item in partial_trace
+                        ],
                         "error_type": type(exc).__name__,
+                        "error_code": getattr(exc, "agent_error_code", None),
+                        "execution_budget_ms": round(
+                            self.service.execution_timeout_seconds * 1000, 3
+                        ),
+                        "remaining_budget_ms": getattr(
+                            exc, "agent_remaining_budget_ms", None,
+                        ),
                     })
         provider = self.service.graph.provider
         metrics = agent_metrics(cases)

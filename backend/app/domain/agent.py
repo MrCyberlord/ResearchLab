@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from app.domain.rag import Citation
+from app.domain.rag import Citation, RetrievalStrategy
 
 
 AgentAction = Literal[
@@ -11,6 +11,11 @@ AgentAction = Literal[
 AgentScope = Literal["general_knowledge", "document_research"]
 AgentRoute = Literal["direct", "document_research"]
 AgentStatus = Literal["direct", "grounded", "insufficient_evidence"]
+AgentDecisionReason = Literal[
+    "general_question", "evidence_needed", "refine_search",
+    "evidence_supports_answer", "evidence_does_not_support_answer",
+    "search_budget_exhausted",
+]
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,7 @@ class AgentDecision:
     top_k: int | None = None
     usage: AgentTokenUsage | None = None
     scope: AgentScope | None = None
+    reason_code: AgentDecisionReason | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,15 @@ class AgentNodeTrace:
     node: str
     duration_ms: float
     outcome: str
+    decision_action: AgentAction | None = None
+    decision_scope: AgentScope | None = None
+    decision_reason: AgentDecisionReason | None = None
+    evidence_count: int | None = None
+    remaining_budget_ms: float | None = None
+    error_type: str | None = None
+    error_code: str | None = None
+    validation_retry_count: int | None = None
+    validation_failure_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +64,11 @@ class AgentToolActivity:
     result_count: int
     duration_ms: float
     outcome: Literal["results", "empty"]
+    query_fingerprint: str | None = None
+    retrieval_strategy: RetrievalStrategy | None = None
+    document_filter_count: int | None = None
+    evidence_added_count: int | None = None
+    remaining_budget_ms: float | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +80,8 @@ class AgentExecutionMetadata:
     node_trace: list[AgentNodeTrace]
     tool_activity: list[AgentToolActivity]
     usage: AgentTokenUsage | None
+    execution_budget_ms: float | None = None
+    remaining_budget_ms: float | None = None
 
 
 @dataclass(frozen=True)

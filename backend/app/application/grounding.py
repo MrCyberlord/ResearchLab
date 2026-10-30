@@ -9,7 +9,8 @@ from app.application.ports import LLMProvider
 from app.application.retrieval import validate_question
 from app.domain.rag import (
     Citation, GroundedAnswer, LLMInvalidResponse, LLMResult, LLMTimeout,
-    LLMUnavailable, QuestionInvalid, RetrievedChunk, SourceReference, TokenUsage,
+    LLMUnavailable, LLMValidationFailure, QuestionInvalid, RetrievedChunk,
+    SourceReference, TokenUsage,
 )
 
 logger = logging.getLogger("researchlab")
@@ -43,6 +44,10 @@ def _merge_usage(first: TokenUsage | None, second: TokenUsage | None) -> TokenUs
         return sum(present) if present else None
 
     return TokenUsage(total("prompt_tokens"), total("completion_tokens"))
+
+
+def _invalid(message: str, reason_code: str) -> None:
+    raise LLMValidationFailure(message, reason_code)
 
 
 class GroundedAnswerService:
@@ -100,6 +105,7 @@ class GroundedAnswerService:
 
         usage: TokenUsage | None = None
         validation_attempt = 0
+        validation_failure_code: str | None = None
         try:
             while True:
                 provider_invalid = False
@@ -123,7 +129,7 @@ class GroundedAnswerService:
                     if not isinstance(result, LLMResult) or not isinstance(
                         result.insufficient_evidence, bool
                     ):
-                        raise LLMInvalidResponse("Provider returned an invalid result.")
+                        _invalid("Provider returned an invalid result.", "result_shape")
                     if result.usage is not None:
                         if not isinstance(result.usage, TokenUsage) or any(
                             value is not None and (
@@ -132,31 +138,38 @@ class GroundedAnswerService:
                                 result.usage.prompt_tokens, result.usage.completion_tokens,
                             )
                         ):
-                            raise LLMInvalidResponse("Provider returned invalid token usage.")
+                            _invalid("Provider returned invalid token usage.", "token_usage")
                     usage = _merge_usage(usage, result.usage)
                     citations: list[Citation] = []
                     if not result.insufficient_evidence:
                         if (not isinstance(result.answer, str) or not result.answer.strip()
                                 or len(result.answer) > 12000):
-                            raise LLMInvalidResponse("Provider returned an empty or oversized answer.")
+                            _invalid(
+                                "Provider returned an empty or oversized answer.", "answer_shape"
+                            )
                         if not result.evidence or len(result.evidence) > 20:
-                            raise LLMInvalidResponse("Provider did not return supporting evidence.")
+                            _invalid(
+                                "Provider did not return supporting evidence.", "evidence_missing"
+                            )
                         seen: set[str] = set()
                         for reference in result.evidence:
                             if (not isinstance(reference, SourceReference)
                                     or reference.source_id not in used):
-                                raise LLMInvalidResponse(
-                                    "Provider cited a source outside the supplied context."
+                                _invalid(
+                                    "Provider cited a source outside the supplied context.",
+                                    "source_out_of_scope",
                                 )
                             chunk, piece = used[reference.source_id]
                             if (not isinstance(reference.quote, str)
                                     or not 1 <= len(reference.quote.strip()) <= 1000):
-                                raise LLMInvalidResponse(
-                                    "Provider supplied an invalid supporting quote."
+                                _invalid(
+                                    "Provider supplied an invalid supporting quote.",
+                                    "quote_shape",
                                 )
                             if _canonical(reference.quote) not in _canonical(piece):
-                                raise LLMInvalidResponse(
-                                    "Provider quote does not match the supplied evidence."
+                                _invalid(
+                                    "Provider quote does not match the supplied evidence.",
+                                    "quote_mismatch",
                                 )
                             if reference.source_id not in seen:
                                 citations.append(Citation(
@@ -168,12 +181,30 @@ class GroundedAnswerService:
                         if any(
                             label not in seen for label in re.findall(r"\[(S\d+)\]", result.answer)
                         ):
-                            raise LLMInvalidResponse(
-                                "Answer contains an unsupported citation label."
+                            _invalid(
+                                "Answer contains an unsupported citation label.",
+                                "citation_label_mismatch",
                             )
                     break
-                except LLMInvalidResponse:
-                    if provider_invalid or validation_attempt >= GROUNDING_VALIDATION_RETRIES:
+                except LLMInvalidResponse as exc:
+                    validation_failure_code = getattr(
+                        exc, "reason_code",
+                        "provider_structured_response" if provider_invalid else "validation_unknown",
+                    )
+                    retry_scheduled = (
+                        not provider_invalid and validation_attempt < GROUNDING_VALIDATION_RETRIES
+                    )
+                    logger.info("generation_validation_failed", extra={
+                        "validation_failure_code": validation_failure_code,
+                        "validation_retry_count": validation_attempt,
+                        "retry_scheduled": retry_scheduled,
+                        "remaining_budget_ms": (
+                            None if deadline is None else
+                            round(max(0, deadline - perf_counter()) * 1000, 3)
+                        ),
+                        "outcome": "retry" if retry_scheduled else "failed",
+                    })
+                    if not retry_scheduled:
                         raise
                     validation_attempt += 1
             elapsed = round((perf_counter() - started) * 1000, 2)
@@ -184,18 +215,27 @@ class GroundedAnswerService:
                 "prompt_tokens": result.usage.prompt_tokens if result.usage else None,
                 "completion_tokens": usage.completion_tokens if usage else None,
                 "validation_retry_count": validation_attempt,
+                "validation_failure_code": validation_failure_code,
             })
             return GroundedAnswer(
                 "insufficient_evidence" if result.insufficient_evidence else "answered",
                 None if result.insufficient_evidence else result.answer.strip(),
                 INSUFFICIENT if result.insufficient_evidence else None,
                 citations, elapsed, len(contexts), usage,
+                validation_attempt, validation_failure_code,
             )
-        except (LLMUnavailable, LLMTimeout, LLMInvalidResponse):
+        except (LLMUnavailable, LLMTimeout, LLMInvalidResponse) as exc:
+            # Attach only bounded diagnostic metadata; never prompts, quotes or source text.
+            try:
+                setattr(exc, "validation_retry_count", validation_attempt)
+                setattr(exc, "validation_failure_code", validation_failure_code)
+            except (AttributeError, TypeError):
+                pass
             logger.info("generation_failed", extra={
                 "generation_ms": round((perf_counter() - started) * 1000, 2),
                 "retrieval_ms": retrieval_ms, "retrieved_chunk_count": len(chunks),
                 "context_chunk_count": len(contexts), "outcome": "provider_error",
                 "validation_retry_count": validation_attempt,
+                "validation_failure_code": validation_failure_code,
             })
             raise

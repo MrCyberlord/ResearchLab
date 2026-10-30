@@ -1,5 +1,6 @@
 """Bounded LangGraph orchestration for LLM-driven document research."""
 from operator import add
+import hashlib
 import logging
 import re
 from time import perf_counter
@@ -52,6 +53,11 @@ def _search_identity(query: str) -> str:
     return " ".join(re.findall(r"\w+", normalized, flags=re.UNICODE))
 
 
+def _query_fingerprint(query: str) -> str:
+    """Stable content-free identifier for correlating equivalent search calls."""
+    return hashlib.sha256(_search_identity(query).encode("utf-8")).hexdigest()[:16]
+
+
 class AgentGraph:
     """LLM decision loop with one document-search tool and hard execution bounds."""
 
@@ -90,12 +96,70 @@ class AgentGraph:
         builder.add_edge("finalize", END)
         self.compiled = builder.compile()
 
-    def _record(self, node: str, started: float, outcome: str = "completed") -> AgentNodeTrace:
+    @staticmethod
+    def _budget_ms(state: AgentState | None) -> float | None:
+        if state is None or "deadline" not in state:
+            return None
+        return round(max(0, state["deadline"] - perf_counter()) * 1000, 3)
+
+    def _record(self, node: str, started: float, outcome: str = "completed",
+                state: AgentState | None = None, decision: AgentDecision | None = None,
+                error: Exception | None = None,
+                validation_retry_count: int | None = None,
+                validation_failure_code: str | None = None) -> AgentNodeTrace:
         duration_ms = round((perf_counter() - started) * 1000, 3)
+        budget_ms = self._budget_ms(state)
+        error_code = getattr(error, "reason_code", None) if error is not None else None
+        if error is not None:
+            validation_retry_count = getattr(
+                error, "validation_retry_count", validation_retry_count,
+            )
+            validation_failure_code = getattr(
+                error, "validation_failure_code", validation_failure_code,
+            )
         self.logger.info("agent_node_completed", extra={
             "agent_node": node, "duration_ms": duration_ms, "outcome": outcome,
+            "agent_action": decision.action if decision else None,
+            "agent_scope": decision.scope if decision else None,
+            "agent_reason": decision.reason_code if decision else None,
+            "evidence_count": len(state.get("evidence", [])) if state is not None else None,
+            "remaining_budget_ms": budget_ms,
+            "agent_error_type": type(error).__name__ if error is not None else None,
+            "agent_error_code": error_code,
+            "validation_retry_count": validation_retry_count,
+            "validation_failure_code": validation_failure_code,
         })
-        return AgentNodeTrace(node, duration_ms, outcome)
+        return AgentNodeTrace(
+            node, duration_ms, outcome,
+            decision.action if decision else None,
+            decision.scope if decision else None,
+            decision.reason_code if decision else None,
+            len(state.get("evidence", [])) if state is not None else None,
+            budget_ms,
+            type(error).__name__ if error is not None else None,
+            error_code,
+            validation_retry_count,
+            validation_failure_code,
+        )
+
+    def _record_failure(self, state: AgentState, node: str, started: float,
+                        error: Exception) -> None:
+        failed = self._record(
+            node, started, "failed", state, state.get("decision"), error,
+        )
+        diagnostics = {
+            "agent_trace": [*state.get("trace", []), failed],
+            "agent_tool_activity": list(state.get("tool_activity", [])),
+            "agent_route": state.get("route"),
+            "agent_tool_call_count": state.get("tool_call_count", 0),
+            "agent_remaining_budget_ms": failed.remaining_budget_ms,
+            "agent_error_code": failed.error_code,
+        }
+        for name, value in diagnostics.items():
+            try:
+                setattr(error, name, value)
+            except (AttributeError, TypeError):
+                pass
 
     @staticmethod
     def _validate_usage(usage: AgentTokenUsage | None) -> None:
@@ -146,6 +210,19 @@ class AgentGraph:
                 "answer_direct", "search_documents", "answer_grounded", "insufficient_evidence",
             }:
                 raise AgentLLMInvalidResponse("The provider returned an unknown Agentic action.")
+            allowed_reasons = {
+                "answer_direct": {"general_question"},
+                "search_documents": {"evidence_needed", "refine_search"},
+                "answer_grounded": {"evidence_supports_answer"},
+                "insufficient_evidence": {
+                    "evidence_does_not_support_answer", "search_budget_exhausted",
+                },
+            }
+            if (decision.reason_code is not None
+                    and decision.reason_code not in allowed_reasons[action]):
+                raise AgentLLMInvalidResponse(
+                    "The provider returned an inconsistent Agentic decision reason."
+                )
             self._validate_usage(decision.usage)
             scope = decision.scope or (
                 "general_knowledge" if action == "answer_direct" else "document_research"
@@ -168,7 +245,11 @@ class AgentGraph:
                     "The provider attempted an ungrounded answer after document search.",
                 )
             if action == "answer_grounded" and not evidence:
-                update["decision"] = AgentDecision("insufficient_evidence", usage=decision.usage)
+                update["decision"] = AgentDecision(
+                    "insufficient_evidence", usage=decision.usage,
+                    scope="document_research",
+                    reason_code="evidence_does_not_support_answer",
+                )
                 update["message"] = DEFAULT_INSUFFICIENT
                 action = "insufficient_evidence"
             if action == "search_documents":
@@ -180,19 +261,28 @@ class AgentGraph:
                 if not key:
                     raise AgentToolInvalid("The model produced an invalid document-search query.")
                 if tool_count >= self.max_tool_calls:
-                    update["decision"] = AgentDecision("insufficient_evidence", usage=decision.usage)
+                    update["decision"] = AgentDecision(
+                        "insufficient_evidence", usage=decision.usage,
+                        scope="document_research", reason_code="search_budget_exhausted",
+                    )
                     update["message"] = "The document-search call limit was reached without sufficient evidence."
                     action = "insufficient_evidence"
                 elif key in state.get("attempted_calls", []):
-                    update["decision"] = AgentDecision("insufficient_evidence", usage=decision.usage)
+                    update["decision"] = AgentDecision(
+                        "insufficient_evidence", usage=decision.usage,
+                        scope="document_research",
+                        reason_code="evidence_does_not_support_answer",
+                    )
                     update["message"] = "A repeated document search was blocked without sufficient evidence."
                     action = "insufficient_evidence"
             route = "direct" if action == "answer_direct" else "document_research"
             update["route"] = route
-        except Exception:
-            self._record("decide", started, "failed")
+        except Exception as exc:
+            self._record_failure(state, "decide", started, exc)
             raise
-        update["trace"] = [self._record("decide", started, action)]
+        update["trace"] = [self._record(
+            "decide", started, action, state, update["decision"],
+        )]
         return update
 
     @staticmethod
@@ -211,11 +301,12 @@ class AgentGraph:
                 query, top_k, state.get("document_ids"), state.get("strategy"),
             )
             self._remaining(state)
-        except Exception:
-            self._record("document_search", started, "failed")
+        except Exception as exc:
+            self._record_failure(state, "document_search", started, exc)
             raise
         existing = {chunk.chunk_id for chunk in state.get("evidence", [])}
         evidence = list(state.get("evidence", []))
+        before_count = len(evidence)
         for chunk in result.chunks:
             if chunk.chunk_id not in existing and len(evidence) < self.max_evidence_chunks:
                 evidence.append(chunk)
@@ -225,25 +316,38 @@ class AgentGraph:
         activity = AgentToolActivity(
             state.get("tool_call_count", 0) + 1, query, top_k,
             len(result.chunks), duration_ms, outcome,
+            _query_fingerprint(query), result.strategy,
+            None if state.get("document_ids") is None else len(state["document_ids"]),
+            len(evidence) - before_count, self._budget_ms(state),
         )
         self.logger.info("agent_tool_completed", extra={
             "agent_tool": "document_search", "tool_call_count": activity.call_index,
             "retrieved_chunk_count": activity.result_count,
             "duration_ms": duration_ms, "outcome": outcome,
+            "query_fingerprint": activity.query_fingerprint,
+            "retrieval_strategy": activity.retrieval_strategy,
+            "document_filter_count": activity.document_filter_count,
+            "evidence_added_count": activity.evidence_added_count,
+            "remaining_budget_ms": activity.remaining_budget_ms,
         })
+        traced_state: AgentState = {**state, "evidence": evidence}
         return {
             "evidence": evidence,
             "attempted_calls": [*state.get("attempted_calls", []), key],
             "tool_call_count": activity.call_index,
             "tool_activity": [activity],
-            "trace": [AgentNodeTrace("document_search", duration_ms, outcome)],
+            "trace": [self._record(
+                "document_search", started, outcome, traced_state, decision,
+            )],
         }
 
     def _observe(self, state: AgentState) -> AgentState:
         started = perf_counter()
         self._remaining(state)
-        return {"trace": [self._record("observe", started, "evidence_available"
-                                      if state.get("evidence") else "empty")]}
+        return {"trace": [self._record(
+            "observe", started,
+            "evidence_available" if state.get("evidence") else "empty", state,
+        )]}
 
     def _direct_response(self, state: AgentState) -> AgentState:
         started = perf_counter()
@@ -258,12 +362,14 @@ class AgentGraph:
                 raise AgentLLMInvalidResponse("The provider returned an invalid Agentic response.")
             self._validate_usage(generation.usage)
             self._remaining(state)
-        except Exception:
-            self._record("direct_response", started, "failed")
+        except Exception as exc:
+            self._record_failure(state, "direct_response", started, exc)
             raise
         update: AgentState = {
             "status": "direct", "answer": generation.answer.strip(), "message": None,
-            "citations": [], "trace": [self._record("direct_response", started)],
+            "citations": [], "trace": [self._record(
+                "direct_response", started, "completed", state,
+            )],
         }
         if generation.usage is not None:
             update["usages"] = [generation.usage]
@@ -277,14 +383,18 @@ class AgentGraph:
                 timeout_seconds=self._remaining(state),
             )
             self._remaining(state)
-        except Exception:
-            self._record("grounded_response", started, "failed")
+        except Exception as exc:
+            self._record_failure(state, "grounded_response", started, exc)
             raise
         status = "grounded" if grounded.status == "answered" else "insufficient_evidence"
         update: AgentState = {
             "status": status, "answer": grounded.answer, "message": grounded.message,
             "citations": grounded.citations,
-            "trace": [self._record("grounded_response", started, status)],
+            "trace": [self._record(
+                "grounded_response", started, status, state, state.get("decision"),
+                validation_retry_count=grounded.validation_retry_count,
+                validation_failure_code=grounded.validation_failure_code,
+            )],
         }
         if grounded.usage is not None:
             update["usages"] = [AgentTokenUsage(
@@ -298,13 +408,16 @@ class AgentGraph:
             "status": "insufficient_evidence", "answer": None,
             "message": state.get("message") or DEFAULT_INSUFFICIENT,
             "citations": [],
-            "trace": [self._record("insufficient_evidence", started)],
+            "trace": [self._record(
+                "insufficient_evidence", started, "completed", state,
+                state.get("decision"),
+            )],
         }
 
     def _finalize(self, state: AgentState) -> AgentState:
         started = perf_counter()
         self._remaining(state)
-        return {"trace": [self._record("finalize", started, state["status"])]}
+        return {"trace": [self._record("finalize", started, state["status"], state)]}
 
     def invoke(self, question: str, document_ids: list[UUID] | None,
                strategy: RetrievalStrategy | None, step_limit: int,

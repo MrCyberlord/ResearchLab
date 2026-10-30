@@ -112,8 +112,11 @@ def test_grounded_response_exposes_citations_and_tool_activity():
     evidence = RetrievedChunk(42, document_id, "manual.pdf", 3, 7,
                               "The warranty lasts three years.", .1)
     service, tool = make_service([
-        AgentDecision("search_documents", "warranty duration", 3),
-        AgentDecision("answer_grounded"),
+        AgentDecision(
+            "search_documents", "warranty duration", 3,
+            reason_code="evidence_needed",
+        ),
+        AgentDecision("answer_grounded", reason_code="evidence_supports_answer"),
     ], [evidence])
     with client(service) as http:
         response = http.post("/api/agent/questions", json={
@@ -131,6 +134,19 @@ def test_grounded_response_exposes_citations_and_tool_activity():
     }]
     assert body["metadata"]["tool_call_count"] == 1
     assert body["metadata"]["tool_activity"][0]["query"] == "warranty duration"
+    activity = body["metadata"]["tool_activity"][0]
+    assert len(activity["query_fingerprint"]) == 16
+    assert activity["retrieval_strategy"] == "hybrid"
+    assert activity["document_filter_count"] == 1
+    assert activity["evidence_added_count"] == 1
+    assert body["metadata"]["execution_budget_ms"] == 120000
+    decisions = [
+        item for item in body["metadata"]["node_trace"] if item["node"] == "decide"
+    ]
+    assert [item["decision_reason"] for item in decisions] == [
+        "evidence_needed", "evidence_supports_answer",
+    ]
+    assert all(item["remaining_budget_ms"] >= 0 for item in body["metadata"]["node_trace"])
     assert tool.calls[0][2] == [document_id] and tool.calls[0][3] == "hybrid"
 
 

@@ -1,0 +1,343 @@
+{
+  "agent": {
+    "document_decision_prompt_version": "document-action-v3",
+    "document_decision_schema_version": "document-action-schema-v3",
+    "execution_timeout_seconds": 120.0,
+    "generation_schema_version": "agent-answer-schema-v1",
+    "graph_step_limit": 20,
+    "grounded_answer_schema_version": "grounded-answer-schema-v2",
+    "grounding_prompt_version": "grounded-answer-v2",
+    "max_tool_calls": 3,
+    "model": "gemma3:4b",
+    "provider": "ollama",
+    "scope_prompt_version": "scope-v2",
+    "temperature": 0,
+    "tool_top_k": 5
+  },
+  "baseline_comparison": {
+    "compatible": false,
+    "metric_deltas": {},
+    "regression": false
+  },
+  "cases": [
+    {
+      "actual_scope": "document_research",
+      "citations": [],
+      "execution_budget_ms": 120000.0,
+      "expected_scope": "document_research",
+      "expected_status": "grounded",
+      "expected_tool_use": true,
+      "graph_steps": 9,
+      "latency_ms": 61347.63,
+      "node_outcomes": [
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:search_documents",
+        "document_search:results",
+        "observe:evidence_available",
+        "decide:insufficient_evidence",
+        "insufficient_evidence:completed",
+        "finalize:insufficient_evidence"
+      ],
+      "node_trace": [
+        {
+          "decision_action": "search_documents",
+          "decision_reason": "evidence_needed",
+          "decision_scope": "document_research",
+          "duration_ms": 29608.543,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 0,
+          "node": "decide",
+          "outcome": "search_documents",
+          "remaining_budget_ms": 90384.966,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": "search_documents",
+          "decision_reason": "evidence_needed",
+          "decision_scope": "document_research",
+          "duration_ms": 83.994,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "document_search",
+          "outcome": "results",
+          "remaining_budget_ms": 90298.933,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": null,
+          "decision_reason": null,
+          "decision_scope": null,
+          "duration_ms": 0.004,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "observe",
+          "outcome": "evidence_available",
+          "remaining_budget_ms": 90297.847,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": "search_documents",
+          "decision_reason": "evidence_needed",
+          "decision_scope": "document_research",
+          "duration_ms": 15382.318,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "decide",
+          "outcome": "search_documents",
+          "remaining_budget_ms": 74914.935,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": "search_documents",
+          "decision_reason": "evidence_needed",
+          "decision_scope": "document_research",
+          "duration_ms": 48.216,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "document_search",
+          "outcome": "results",
+          "remaining_budget_ms": 74865.458,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": null,
+          "decision_reason": null,
+          "decision_scope": null,
+          "duration_ms": 0.006,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "observe",
+          "outcome": "evidence_available",
+          "remaining_budget_ms": 74864.347,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": "insufficient_evidence",
+          "decision_reason": "evidence_does_not_support_answer",
+          "decision_scope": "document_research",
+          "duration_ms": 16208.116,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "decide",
+          "outcome": "insufficient_evidence",
+          "remaining_budget_ms": 58655.324,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": "insufficient_evidence",
+          "decision_reason": "evidence_does_not_support_answer",
+          "decision_scope": "document_research",
+          "duration_ms": 0.004,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "insufficient_evidence",
+          "outcome": "completed",
+          "remaining_budget_ms": 58653.824,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        },
+        {
+          "decision_action": null,
+          "decision_reason": null,
+          "decision_scope": null,
+          "duration_ms": 0.004,
+          "error_code": null,
+          "error_type": null,
+          "evidence_count": 2,
+          "node": "finalize",
+          "outcome": "insufficient_evidence",
+          "remaining_budget_ms": 58652.991,
+          "validation_failure_code": null,
+          "validation_retry_count": null
+        }
+      ],
+      "question_id": "d03_low_battery_response",
+      "relevant": [
+        [
+          "lunar_power",
+          1,
+          0
+        ]
+      ],
+      "remaining_budget_ms": 58652.991,
+      "repeat_index": 1,
+      "status": "insufficient_evidence",
+      "tags": [
+        "document_grounded"
+      ],
+      "tool_activity": [
+        {
+          "call_index": 1,
+          "document_filter_count": 1,
+          "duration_ms": 83.861,
+          "evidence_added_count": 2,
+          "outcome": "results",
+          "query": "Selene power procedure low electricity threshold",
+          "query_fingerprint": "b8c23e538a0de0db",
+          "remaining_budget_ms": 90298.964,
+          "result_count": 2,
+          "retrieval_strategy": "semantic",
+          "top_k": 3
+        },
+        {
+          "call_index": 2,
+          "document_filter_count": 1,
+          "duration_ms": 48.104,
+          "evidence_added_count": 0,
+          "outcome": "results",
+          "query": "Selene power procedure low electricity threshold response",
+          "query_fingerprint": "8a6da488f6d66696",
+          "remaining_budget_ms": 74865.496,
+          "result_count": 2,
+          "retrieval_strategy": "semantic",
+          "top_k": 5
+        }
+      ],
+      "tool_call_count": 2,
+      "tool_used": true
+    }
+  ],
+  "dataset": {
+    "attempted_run_count": 1,
+    "category_counts": {
+      "document_grounded": 1
+    },
+    "document_count": 3,
+    "license": "CC0-1.0",
+    "question_count": 1,
+    "repeats": 1,
+    "selected_question_ids": [
+      "d03_low_battery_response"
+    ],
+    "sha256": "e4d6b06b9ce9d3cdfa6118807748da8e90acf66445d4ec9f0bab3573d34d8245",
+    "title": "Synthetic document-research agent evaluation",
+    "total_question_count": 10,
+    "version": "researchlab-agent-eval-v1"
+  },
+  "limitations": {
+    "citation_check": "mechanical source identity and verbatim quote containment only",
+    "factual_entailment_measured": false,
+    "sample_size": "small synthetic dataset; not representative of production domains"
+  },
+  "metric_definitions": {
+    "abstention_accuracy": "expected versus observed insufficient-evidence behavior / all attempted runs",
+    "citation_validity": "citations with an expected document/page/chunk identity and verbatim quote containment / all citations",
+    "configured_timeout_overrun_count": "attempts whose wall-clock latency exceeded the configured total execution timeout",
+    "document_scope_compliance": "expected general/document scope matched / all attempted runs; errors are incorrect",
+    "grounded_answer_rate": "grounded responses / runs labelled grounded",
+    "latency": "nearest-rank p50/p95 wall-clock AgentService latency, including failed attempts",
+    "tool_selection_accuracy": "expected tool-use boolean matched / all attempted runs; errors are incorrect",
+    "variability": "unique scope/status/tool-use/tool-count/error signatures across repeated runs"
+  },
+  "metrics": {
+    "abstention_accuracy": 0.0,
+    "citation_coverage": 0.0,
+    "citation_reference_precision": null,
+    "citation_validity": null,
+    "configured_timeout_overrun_count": 0,
+    "denominators": {
+      "attempted_runs": 1,
+      "citation_count": 0,
+      "completed_runs": 1,
+      "expected_abstention_runs": 0,
+      "expected_grounded_runs": 1,
+      "expected_relevant_reference_count": 1
+    },
+    "document_scope_compliance": 1.0,
+    "end_to_end_latency_ms": {
+      "p50": 61347.63,
+      "p95": 61347.63,
+      "sample_count": 1
+    },
+    "error_count": 0,
+    "expected_status_accuracy": 0.0,
+    "factual_entailment_measured": false,
+    "graph_steps": {
+      "max": 9,
+      "mean": 9.0,
+      "min": 9,
+      "sample_count": 1
+    },
+    "grounded_answer_rate": 0.0,
+    "mechanical_quote_validity": null,
+    "tool_calls": {
+      "max": 2,
+      "mean": 2.0,
+      "min": 2,
+      "sample_count": 1
+    },
+    "tool_selection_accuracy": 1.0,
+    "unanswerable_abstention_rate": null
+  },
+  "retrieval": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_profile": "7b9b125c9b67b1a84b8a4bafd993c2cd1da91042688feeaf9cab6c55cda3778b",
+    "embedding_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "min_similarity": 0.15,
+    "strategy": "semantic"
+  },
+  "run": {
+    "created_at_utc": "2026-10-30T17:07:06+00:00",
+    "git_revision": "f3eb529859d10527e20b9f20552cdb5a114239fe",
+    "git_worktree_dirty": true,
+    "hardware": {
+      "available_memory_gib_at_report": 0.68,
+      "logical_cpu_count": 14,
+      "physical_cpu_cores": 12,
+      "processor": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+      "visible_memory_gib": 15.46
+    },
+    "isolation": "private transaction-scoped PostgreSQL schema rolled back after the run",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "production_counts_after": [
+      1,
+      3
+    ],
+    "production_counts_before": [
+      1,
+      3
+    ],
+    "production_data_mutated": false,
+    "python": "3.14.7",
+    "run_id": "gemma3-4b-v1-quality-v3-attempt"
+  },
+  "schema_version": 1,
+  "usage": {
+    "completion_tokens": 128,
+    "prompt_tokens": 1443,
+    "samples_with_usage": 1
+  },
+  "variability": {
+    "question_count": 1,
+    "questions": [
+      {
+        "question_id": "d03_low_battery_response",
+        "run_count": 1,
+        "signature_counts": {
+          "document_research|insufficient_evidence|True|2|None": 1
+        },
+        "unique_decision_signatures": 1
+      }
+    ],
+    "questions_with_variation": 0,
+    "signature": "scope|status|tool_used|tool_call_count|error_type",
+    "stable_question_rate": 1.0
+  }
+}

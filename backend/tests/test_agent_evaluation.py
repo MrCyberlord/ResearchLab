@@ -182,6 +182,36 @@ def test_runner_failure_injection_is_visible_and_never_scores_as_success(tmp_pat
     assert {case["error_type"] for case in result["cases"]} == {type(failure).__name__}
 
 
+def test_runner_preserves_safe_partial_trace_on_execution_failure(tmp_path):
+    dataset = load_agent_dataset(default_agent_dataset_path())
+    environment = environment_for(dataset)
+    failure = AgentLLMInvalidResponse("malformed private response")
+    failure.agent_trace = [AgentNodeTrace(
+        "grounded_response", 2.5, "failed", "answer_grounded",
+        "document_research", "evidence_supports_answer", 2, 5000,
+        "LLMValidationFailure", "quote_mismatch", 1, "quote_mismatch",
+    )]
+    failure.agent_tool_activity = [AgentToolActivity(
+        1, "private model query", 3, 2, 1.2, "results",
+        "0123456789abcdef", "semantic", 1, 2, 6000,
+    )]
+    failure.agent_route = "document_research"
+    failure.agent_tool_call_count = 1
+    failure.agent_remaining_budget_ms = 5000
+    failure.agent_error_code = "quote_mismatch"
+    result = AgentEvaluationRunner(
+        dataset, environment, settings(), "partial", tmp_path,
+        FakeAgentService(dataset, environment, failure=failure),
+    ).run(question_ids=["d03_low_battery_response"])
+    case = result["cases"][0]
+    assert case["error_type"] == "AgentLLMInvalidResponse"
+    assert case["error_code"] == "quote_mismatch"
+    assert case["actual_scope"] == "document_research"
+    assert case["tool_used"] is True and case["tool_call_count"] == 1
+    assert case["node_trace"][0]["validation_retry_count"] == 1
+    assert case["remaining_budget_ms"] == 5000
+
+
 def test_runner_can_limit_an_expensive_real_model_run_to_known_questions(tmp_path):
     dataset = load_agent_dataset(default_agent_dataset_path())
     environment = environment_for(dataset)

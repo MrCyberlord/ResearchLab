@@ -43,6 +43,21 @@ class AgentNodeTraceResponse(BaseModel):
     node: str
     duration_ms: float = Field(ge=0)
     outcome: str
+    decision_action: Literal[
+        "answer_direct", "search_documents", "answer_grounded", "insufficient_evidence",
+    ] | None = None
+    decision_scope: Literal["general_knowledge", "document_research"] | None = None
+    decision_reason: Literal[
+        "general_question", "evidence_needed", "refine_search",
+        "evidence_supports_answer", "evidence_does_not_support_answer",
+        "search_budget_exhausted",
+    ] | None = None
+    evidence_count: int | None = Field(default=None, ge=0)
+    remaining_budget_ms: float | None = Field(default=None, ge=0)
+    error_type: str | None = None
+    error_code: str | None = None
+    validation_retry_count: int | None = Field(default=None, ge=0, le=1)
+    validation_failure_code: str | None = None
 
 
 class AgentToolActivityResponse(BaseModel):
@@ -52,6 +67,11 @@ class AgentToolActivityResponse(BaseModel):
     result_count: int = Field(ge=0)
     duration_ms: float = Field(ge=0)
     outcome: Literal["results", "empty"]
+    query_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{16}$")
+    retrieval_strategy: Strategy | None = None
+    document_filter_count: int | None = Field(default=None, ge=0, le=100)
+    evidence_added_count: int | None = Field(default=None, ge=0)
+    remaining_budget_ms: float | None = Field(default=None, ge=0)
 
 
 class AgentCitationResponse(BaseModel):
@@ -73,6 +93,8 @@ class AgentMetadataResponse(BaseModel):
     node_trace: list[AgentNodeTraceResponse]
     tool_activity: list[AgentToolActivityResponse]
     usage: AgentUsageResponse | None
+    execution_budget_ms: float | None = Field(default=None, ge=0)
+    remaining_budget_ms: float | None = Field(default=None, ge=0)
 
 
 class AgentQuestionResponse(BaseModel):

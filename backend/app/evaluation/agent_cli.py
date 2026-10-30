@@ -44,7 +44,8 @@ def report(result: dict) -> str:
         f"{result['agent']['temperature']}; retrieval strategy `{result['retrieval']['strategy']}`.",
         hardware_summary,
         f"Scope prompt `{result['agent']['scope_prompt_version']}`; document schema "
-        f"`{result['agent']['document_decision_schema_version']}`.", "",
+        f"`{result['agent']['document_decision_schema_version']}`; grounding schema "
+        f"`{result['agent'].get('grounded_answer_schema_version', 'unrecorded')}`.", "",
         "| Metric | Value | Denominator |",
         "| --- | ---: | ---: |",
         f"| Tool-selection accuracy | {_display(metrics['tool_selection_accuracy'])} | "
@@ -76,16 +77,25 @@ def report(result: dict) -> str:
         f"{result['variability']['question_count']} questions varied across repeats; stable-question rate "
         f"`{result['variability']['stable_question_rate']}`.", "",
         "## Cases", "",
-        "| Question | Repeat | Expected | Actual | Tool calls | Citations | Latency ms | Error |",
-        "| --- | ---: | --- | --- | ---: | ---: | ---: | --- |",
+        "| Question | Repeat | Expected | Actual | Decision path | Tool calls | Citations | Latency ms | Error |",
+        "| --- | ---: | --- | --- | --- | ---: | ---: | ---: | --- |",
     ]
     for case in result["cases"]:
         expected = f"{case['expected_scope']}/{case['expected_status']}"
         actual = f"{case.get('actual_scope')}/{case['status']}"
+        decision_path = " -> ".join(
+            f"{item.get('decision_action')}[{item.get('decision_reason')}]"
+            for item in case.get("node_trace", [])
+            if item.get("node") == "decide" and item.get("decision_action")
+        ) or "unrecorded"
+        error = case.get("error_type", "")
+        if case.get("error_code"):
+            error = f"{error}:{case['error_code']}" if error else case["error_code"]
         lines.append(
             f"| {case['question_id']} | {case['repeat_index']} | {expected} | {actual} | "
+            f"{decision_path} | "
             f"{_display(case.get('tool_call_count'))} | {len(case.get('citations', []))} | "
-            f"{case['latency_ms']} | {case.get('error_type', '')} |"
+            f"{case['latency_ms']} | {error} |"
         )
     lines += [
         "", "## Interpretation limits", "",
