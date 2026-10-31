@@ -17,6 +17,8 @@ from app.application.grounding import GroundedAnswerService
 from app.infrastructure.document_search import SessionDocumentSearchTool, build_retrieval_service
 from app.infrastructure.agent_llm import create_agent_generation_provider
 from app.application.comparison import ComparisonService
+from app.application.evaluation_dashboard import EvaluationSummaryService
+from app.infrastructure.evaluation_artifacts import VersionedEvaluationArtifactReader
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -75,3 +77,7 @@ def get_comparison_service(
     agent: AgentService = Depends(get_agent_service),
 ) -> ComparisonService:
     return ComparisonService(rag, agent)
+
+
+def get_evaluation_summary_service() -> EvaluationSummaryService:
+    return EvaluationSummaryService(VersionedEvaluationArtifactReader())

@@ -6,6 +6,7 @@ import {
   type AgentComparison, type Citation, type ComparisonResponse, type DocumentItem,
   type RagComparison, type ScopeMode, type Strategy,
 } from './CompareContract.js';
+import { EvaluationDashboard } from './EvaluationDashboard.js';
 
 const strategies: { value: Strategy; label: string }[] = [
   { value: 'semantic', label: 'Semantic' },
@@ -280,5 +281,6 @@ export function CompareQuestion({ libraryVersion }: { libraryVersion: number }) 
     {busy && <ComparisonProgress />}
     {error && <p className="comparison-error" role="alert">{error}</p>}
     {result && <ComparisonResults result={result} />}
+    <EvaluationDashboard />
   </section>;
 }

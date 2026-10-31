@@ -728,3 +728,55 @@ $comparisonTemp = ".venv/pytest-m4a-$([guid]::NewGuid().ToString('N'))"
 .\.venv\Scripts\python.exe -m pytest -p no:cacheprovider `
   --basetemp=$comparisonTemp backend/tests/test_comparison.py
 ```
+
+## Evaluation dashboard and research insights (Milestone 4C)
+
+The Compare workspace retains its live sequential comparison form and adds a separate
+read-only evaluation section. Loading the dashboard calls
+`GET /api/evaluations/summary`; it never starts retrieval evaluation, Ollama inference,
+model downloads or database writes. The endpoint validates and aggregates only four
+committed, server-approved artifacts:
+
+- `rag_baseline` (`minilm-v1.json`)
+- `rag_strategy_reference` (`hybrid-comparison-v1.json`)
+- `agent_baseline` (`gemma3-4b-v1.json`)
+- `agent_evidence_observation` (`gemma3-4b-v1-quality-after-v4.json`)
+
+The endpoint has no path parameter. Artifact identifiers map to fixed relative paths in
+the infrastructure adapter, resolved paths must remain beneath the evaluation root, and
+each JSON file is size bounded. Raw cases, questions, prompts, search queries, chunks,
+citations, platform details, filesystem paths and exception text are not returned.
+Missing, invalid, incomplete and dataset-incompatible artifacts are represented by safe
+artifact states and issue codes; a valid RAG or Agentic section remains available when
+the other section fails.
+
+RAG panels report Recall@K, Precision@K, MRR@K, Hit Rate@K and reference latency for
+semantic, hybrid and reranked retrieval on the same v1 relevance judgments. These
+metrics macro-average six answerable questions; the two unanswerable questions have no
+relevance denominator. The embedding identity, revision, chunking/retrieval settings,
+dataset version, sample sizes and run timestamps remain visible.
+
+Agentic panels preserve attempted, completed, failed, grounded-labelled,
+abstention-labelled, returned-citation and expected-reference denominators separately.
+They show decision/status/citation ratios, p50/p95 latency including failures, tool-call
+and graph-step distributions, failure rate, model/prompt/schema versions and the
+one-case evidence-assessment observation. Mechanical citation checks are labelled as
+such; factual entailment is not claimed.
+
+RAG retrieval metrics and Agentic decision/reliability metrics use different datasets,
+tasks and denominators. The dashboard explicitly forbids cross-panel ranking and does
+not name a winner. The Germany PDF live observation remains separate: it documents one
+validated RAG answer and one Agentic abstention after relevant retrieval, consistent
+with the targeted evidence-assessment limitation but not a general performance claim.
+
+Run the focused deterministic checks without PostgreSQL or Ollama:
+
+```powershell
+$evaluationTemp = ".venv/pytest-m4c-$([guid]::NewGuid().ToString('N'))"
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider `
+  --basetemp=$evaluationTemp backend/tests/test_evaluation_dashboard.py
+Set-Location frontend
+npm.cmd run test:compare
+npm.cmd run typecheck
+Set-Location ..
+```

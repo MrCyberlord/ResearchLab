@@ -76,3 +76,9 @@ class RetrievalRepository(Protocol):
     def keyword_search(self, query: str, vector: list[float], profile: str, top_k: int,
                        document_ids: list[UUID] | None) -> list[RetrievedChunk]: ...
     def list_documents(self, limit: int, offset: int) -> tuple[list[Document], int]: ...
+
+
+class EvaluationArtifactReader(Protocol):
+    """Read one server-approved, version-controlled evaluation artifact."""
+
+    def read(self, artifact_id: str) -> dict: ...
